@@ -11,28 +11,28 @@
     background: #faf9f5;
     color: #141413;
     min-height: 100vh;
-    padding: 60px 24px 80px;
+    padding: 64px 24px 80px;
   }
   .container {
-    max-width: 920px;
+    max-width: 980px;
     margin: 0 auto;
   }
   header {
     text-align: center;
-    margin-bottom: 56px;
+    margin-bottom: 60px;
   }
   header h1 {
-    font-size: 34px;
+    font-size: 38px;
     font-weight: 700;
-    letter-spacing: -0.5px;
-    margin-bottom: 14px;
+    letter-spacing: -0.6px;
+    margin-bottom: 16px;
   }
   header .sub {
-    font-size: 15px;
+    font-size: 17px;
     color: #98886e;
     line-height: 1.6;
   }
-  .list { display: flex; flex-direction: column; gap: 16px; }
+  .list { display: flex; flex-direction: column; gap: 18px; }
   a.row {
     display: grid;
     grid-template-columns: 380px 1fr auto;
@@ -58,52 +58,28 @@
     border-right: 1px solid #e8e6dc;
   }
   .body {
-    padding: 26px 30px;
+    padding: 28px 32px;
     display: flex;
     flex-direction: column;
     justify-content: center;
   }
-  .tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 11px 4px 10px;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    border-radius: 999px;
-    align-self: flex-start;
-    line-height: 1;
-    margin-bottom: 14px;
-  }
-  .tag::before {
-    content: '';
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-  }
-  .tag-proto  { background: rgba(44, 93, 140, 0.10);  color: #2c5d8c; }
-  .tag-cache  { background: rgba(199, 90, 31, 0.10);  color: #c75a1f; }
-  .tag-tool   { background: rgba(90, 104, 49, 0.12);  color: #5a6831; }
-  .tag-reason { background: rgba(142, 74, 126, 0.10); color: #8e4a7e; }
   .title {
-    font-size: 22px;
+    font-size: 28px;
     font-weight: 700;
-    letter-spacing: -0.3px;
-    line-height: 1.3;
-    margin-bottom: 8px;
+    letter-spacing: -0.4px;
+    line-height: 1.28;
+    margin-bottom: 12px;
   }
   .desc {
-    font-size: 15px;
+    font-size: 17px;
     color: #98886e;
     line-height: 1.55;
   }
   .arrow {
     display: flex;
     align-items: center;
-    padding: 0 28px;
-    font-size: 22px;
+    padding: 0 30px;
+    font-size: 24px;
     color: #c8b8a8;
     transition: transform 0.25s ease, color 0.25s ease;
   }
@@ -131,7 +107,6 @@
       <a class="row" href="051_claude_trace/structure_diagram.html">
         <div class="thumb" style="background-image:url('thumbs-tight/051.jpg')"></div>
         <div class="body">
-          <span class="tag tag-proto">协议</span>
           <div class="title">一句 hello 背后的 API 结构</div>
           <div class="desc">claude-trace 抓到的完整请求/响应剖面</div>
         </div>
@@ -140,7 +115,6 @@
       <a class="row" href="052_claude_cache/prefix_cache_demo.html">
         <div class="thumb" style="background-image:url('thumbs-tight/052.jpg')"></div>
         <div class="body">
-          <span class="tag tag-cache">缓存</span>
           <div class="title">Prompt Cache 工作原理</div>
           <div class="desc">三轮对话的缓存演变与成本影响</div>
         </div>
@@ -149,7 +123,6 @@
       <a class="row" href="053_tool_use/visual_section2.html">
         <div class="thumb" style="background-image:url('thumbs-tight/053.jpg')"></div>
         <div class="body">
-          <span class="tag tag-tool">工具</span>
           <div class="title">Tool Use 契约</div>
           <div class="desc">模型负责说，客户端负责做</div>
         </div>
@@ -158,7 +131,6 @@
       <a class="row" href="054_server_tools/flow.html">
         <div class="thumb" style="background-image:url('thumbs-tight/054.jpg')"></div>
         <div class="body">
-          <span class="tag tag-tool">工具</span>
           <div class="title">WebSearch 调用全流程</div>
           <div class="desc">3 次 API · 2 个模型 · Brave 真去搜</div>
         </div>
@@ -167,7 +139,6 @@
       <a class="row" href="055_claude_cache2/cache_control_demo.html">
         <div class="thumb" style="background-image:url('thumbs-tight/055.jpg')"></div>
         <div class="body">
-          <span class="tag tag-cache">缓存</span>
           <div class="title">cache_control 工作机制</div>
           <div class="desc">两静一动 · 写入读取 · lookback 20 格上限</div>
         </div>
@@ -176,7 +147,6 @@
       <a class="row" href="057_thinking_mode/visual_thinking.html">
         <div class="thumb" style="background-image:url('thumbs-tight/057.jpg')"></div>
         <div class="body">
-          <span class="tag tag-reason">推理</span>
           <div class="title">Thinking 模式</div>
           <div class="desc">运行时架构 + 训练流水线 + 输出对比</div>
         </div>
@@ -185,7 +155,6 @@
       <a class="row" href="058_claude_cache3/visual.html">
         <div class="thumb" style="background-image:url('thumbs-tight/058.jpg')"></div>
         <div class="body">
-          <span class="tag tag-cache">缓存</span>
           <div class="title">Prompt Cache 实战避坑</div>
           <div class="desc">链条心法 · 切模型 · 装 MCP · idle 超时</div>
         </div>
