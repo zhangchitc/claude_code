@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Code Internals — Index</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Funnel+Sans:wght@400;500;600;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f4f3ef;
+    --ink: #0a0a0a;
+    --red: #e23028;
+    --rule: rgba(10,10,10,0.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--paper); color: var(--ink); }
+  body {
+    font-family: 'Funnel Sans', Helvetica, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+    background-image: linear-gradient(to right, var(--rule) 1px, transparent 1px);
+    background-size: calc(100% / 12) 100%;
+  }
+  .wrap {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 40px 48px 80px;
+  }
+  .topbar {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 24px;
+    padding-bottom: 18px;
+    border-bottom: 2px solid var(--ink);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  .topbar > div { grid-column: span 3; }
+  .topbar .right { grid-column: 10 / 13; text-align: right; }
+  .topbar .accent { color: var(--red); }
+
+  .hero {
+    margin: 72px 0 88px;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 24px;
+  }
+  .hero h1 {
+    grid-column: 1 / 13;
+    font-family: 'Anton', sans-serif;
+    font-weight: 400;
+    font-size: clamp(96px, 17vw, 220px);
+    line-height: 0.84;
+    letter-spacing: -0.018em;
+    text-transform: uppercase;
+  }
+  .hero h1 em {
+    font-style: normal;
+    color: var(--red);
+  }
+  .hero .lede {
+    grid-column: 1 / 7;
+    margin-top: 28px;
+    font-size: 22px;
+    line-height: 1.32;
+    font-weight: 500;
+    letter-spacing: -0.012em;
+  }
+  .hero .meta {
+    grid-column: 9 / 13;
+    margin-top: 28px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    text-align: right;
+    line-height: 2;
+  }
+
+  .table {
+    border-top: 2px solid var(--ink);
+  }
+  .row {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 24px;
+    padding: 30px 0 28px;
+    border-bottom: 1px solid var(--ink);
+    text-decoration: none;
+    color: var(--ink);
+    align-items: baseline;
+    position: relative;
+    transition: padding 0.25s ease;
+    overflow: hidden;
+  }
+  .row:hover { padding-left: 28px; }
+  .row::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0;
+    width: 0; height: 100%;
+    background: var(--red);
+    transition: width 0.25s ease;
+  }
+  .row:hover::before { width: 10px; }
+  .row .tag {
+    grid-column: 1 / 3;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--red);
+    padding-top: 8px;
+  }
+  .row .title {
+    grid-column: 3 / 9;
+    font-family: 'Anton', sans-serif;
+    font-weight: 400;
+    font-size: 40px;
+    line-height: 0.96;
+    letter-spacing: -0.005em;
+    text-transform: uppercase;
+  }
+  .row .desc {
+    grid-column: 9 / 12;
+    font-size: 15px;
+    line-height: 1.45;
+    color: rgba(10,10,10,0.7);
+    padding-top: 6px;
+  }
+  .row .ar {
+    grid-column: 12;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 24px;
+    color: var(--red);
+    text-align: right;
+    align-self: center;
+    transition: transform 0.25s ease;
+  }
+  .row:hover .ar { transform: translateX(8px); }
+
+  .footer {
+    margin-top: 64px;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  .footer .l { grid-column: 1 / 5; }
+  .footer .r { grid-column: 9 / 13; text-align: right; }
+  .footer a { color: var(--red); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <div><span class="accent">●</span> &nbsp;Claude Code</div>
+    <div>Index of Internals</div>
+    <div></div>
+    <div class="right">2026 · ZH</div>
+  </header>
+
+  <section class="hero">
+    <h1>How It<br>Actually<br>Runs<em>.</em></h1>
+    <p class="lede">Seven visualisations of Claude Code's internals — taken straight from the wire.</p>
+    <div class="meta">
+      <div>七张图</div>
+      <div>Spring 2026</div>
+    </div>
+  </section>
+
+  <nav class="table">
+    <a class="row" href="051_claude_trace/structure_diagram.html">
+      <span class="tag">Protocol</span>
+      <span class="title">一句 hello 背后</span>
+      <span class="desc">claude-trace 抓到的完整请求/响应剖面</span>
+      <span class="ar">↗</span>
+    </a>
+    <a class="row" href="052_claude_cache/prefix_cache_demo.html">
+      <span class="tag">Cache</span>
+      <span class="title">Prompt Cache 原理</span>
+      <span class="desc">三轮对话的缓存演变与成本影响</span>
+      <span class="ar">↗</span>
+    </a>
+    <a class="row" href="053_tool_use/visual_section2.html">
+      <span class="tag">Tool Use</span>
+      <span class="title">Tool Use 契约</span>
+      <span class="desc">模型负责说，客户端负责做</span>
+      <span class="ar">↗</span>
+    </a>
+    <a class="row" href="054_server_tools/flow.html">
+      <span class="tag">Server Tools</span>
+      <span class="title">WebSearch 全流程</span>
+      <span class="desc">3 次 API · 2 个模型 · Brave 真去搜</span>
+      <span class="ar">↗</span>
+    </a>
+    <a class="row" href="055_claude_cache2/cache_control_demo.html">
+      <span class="tag">Cache · Mech</span>
+      <span class="title">cache_control 机制</span>
+      <span class="desc">两静一动 · 写入读取 · lookback 20 格</span>
+      <span class="ar">↗</span>
+    </a>
+    <a class="row" href="057_thinking_mode/visual_thinking.html">
+      <span class="tag">Reasoning</span>
+      <span class="title">Thinking 模式</span>
+      <span class="desc">运行时架构 + 训练流水线 + 输出对比</span>
+      <span class="ar">↗</span>
+    </a>
+    <a class="row" href="058_claude_cache3/visual.html">
+      <span class="tag">Field Notes</span>
+      <span class="title">Cache 实战避坑</span>
+      <span class="desc">切模型 · 装 MCP · idle 5 分钟会让缓存全废</span>
+      <span class="ar">↗</span>
+    </a>
+  </nav>
+
+  <footer class="footer">
+    <div class="l">Source</div>
+    <div class="r"><a href="https://github.com/zhangchitc/claude_code">github.com/zhangchitc/claude_code</a></div>
+  </footer>
+</div>
+</body>
+</html>

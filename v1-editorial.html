@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>From The Inside · Claude Code</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500&family=EB+Garamond:ital,wght@0,400..800;1,400..800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f1e8cf;
+    --ink: #1a1611;
+    --rust: #a8421a;
+    --muted: #6b5d4d;
+    --rule: #cfc2a3;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--paper); color: var(--ink); }
+  body {
+    font-family: 'EB Garamond', Georgia, serif;
+    font-size: 19px;
+    line-height: 1.5;
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.1 0 0 0 0 0.09 0 0 0 0 0.06 0 0 0 0.07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    opacity: 0.55;
+    mix-blend-mode: multiply;
+    z-index: 1;
+  }
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 96px 32px 120px;
+    position: relative;
+    z-index: 2;
+  }
+  .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--rust);
+    margin-bottom: 32px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .eyebrow::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--rust);
+    opacity: 0.35;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
+    font-weight: 340;
+    font-style: italic;
+    font-size: clamp(56px, 9vw, 104px);
+    line-height: 0.92;
+    letter-spacing: -0.028em;
+    margin-bottom: 32px;
+  }
+  h1 em { font-style: normal; color: var(--rust); }
+  .lede {
+    font-family: 'EB Garamond', serif;
+    font-size: 22px;
+    line-height: 1.55;
+    color: var(--muted);
+    max-width: 560px;
+  }
+  .meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 56px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+  }
+  .toc {
+    margin-top: 88px;
+    border-top: 2px solid var(--ink);
+  }
+  .entry {
+    display: block;
+    text-decoration: none;
+    color: var(--ink);
+    padding: 34px 0 32px;
+    border-bottom: 1px solid var(--rule);
+    transition: background 0.25s ease;
+  }
+  .entry:hover { background: rgba(168, 66, 26, 0.07); }
+  .entry-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 24px;
+    align-items: baseline;
+  }
+  .entry-headline {
+    font-family: 'Fraunces', Georgia, serif;
+    font-variation-settings: 'opsz' 36, 'SOFT' 0;
+    font-weight: 420;
+    font-size: 30px;
+    line-height: 1.16;
+    letter-spacing: -0.012em;
+  }
+  .entry-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--rust);
+    margin-bottom: 10px;
+  }
+  .entry-desc {
+    margin-top: 12px;
+    font-family: 'EB Garamond', serif;
+    font-style: italic;
+    color: var(--muted);
+    font-size: 17.5px;
+    max-width: 580px;
+    line-height: 1.5;
+  }
+  .arrow {
+    font-family: 'EB Garamond', serif;
+    font-size: 26px;
+    color: var(--rust);
+    transition: transform 0.3s ease;
+  }
+  .entry:hover .arrow { transform: translateX(10px); }
+  .foot {
+    margin-top: 96px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+  }
+  .foot a {
+    color: var(--rust);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--rust);
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="eyebrow">Visual Essays · Volume I</div>
+  <h1>From the<br>Inside<em>.</em></h1>
+  <p class="lede">Seven interactive diagrams that take Claude Code apart — by the wire it speaks, the cache it keeps, and the tools it borrows.</p>
+  <div class="meta">
+    <span>七篇 · 中文</span>
+    <span>MMXXVI</span>
+  </div>
+
+  <nav class="toc">
+    <a class="entry" href="051_claude_trace/structure_diagram.html">
+      <div class="entry-grid">
+        <div>
+          <div class="entry-tag">Protocol</div>
+          <div class="entry-headline">一句 hello 背后的 API 结构</div>
+          <div class="entry-desc">用 claude-trace 抓到的完整请求与流式响应剖面。</div>
+        </div>
+        <span class="arrow">→</span>
+      </div>
+    </a>
+    <a class="entry" href="052_claude_cache/prefix_cache_demo.html">
+      <div class="entry-grid">
+        <div>
+          <div class="entry-tag">Cache</div>
+          <div class="entry-headline">Prompt Cache 工作原理</div>
+          <div class="entry-desc">三轮对话里的缓存怎么滚雪球、又怎么省钱。</div>
+        </div>
+        <span class="arrow">→</span>
+      </div>
+    </a>
+    <a class="entry" href="053_tool_use/visual_section2.html">
+      <div class="entry-grid">
+        <div>
+          <div class="entry-tag">Tool Use</div>
+          <div class="entry-headline">模型负责说，客户端负责做</div>
+          <div class="entry-desc">Tool Use 这份契约把"说"和"做"切得很干净。</div>
+        </div>
+        <span class="arrow">→</span>
+      </div>
+    </a>
+    <a class="entry" href="054_server_tools/flow.html">
+      <div class="entry-grid">
+        <div>
+          <div class="entry-tag">Server Tools</div>
+          <div class="entry-headline">WebSearch 调用全流程</div>
+          <div class="entry-desc">三次 API、两个模型、一个真去搜的 Brave。</div>
+        </div>
+        <span class="arrow">→</span>
+      </div>
+    </a>
+    <a class="entry" href="055_claude_cache2/cache_control_demo.html">
+      <div class="entry-grid">
+        <div>
+          <div class="entry-tag">Cache · Mechanics</div>
+          <div class="entry-headline">cache_control 工作机制</div>
+          <div class="entry-desc">两静一动的 breakpoint，加上 lookback 20 格的天花板。</div>
+        </div>
+        <span class="arrow">→</span>
+      </div>
+    </a>
+    <a class="entry" href="057_thinking_mode/visual_thinking.html">
+      <div class="entry-grid">
+        <div>
+          <div class="entry-tag">Reasoning</div>
+          <div class="entry-headline">Thinking 模式</div>
+          <div class="entry-desc">运行时架构、训练流水线、和 content 数组里多出来的那块。</div>
+        </div>
+        <span class="arrow">→</span>
+      </div>
+    </a>
+    <a class="entry" href="058_claude_cache3/visual.html">
+      <div class="entry-grid">
+        <div>
+          <div class="entry-tag">Field Notes</div>
+          <div class="entry-headline">Prompt Cache 实战避坑</div>
+          <div class="entry-desc">切模型、装 MCP、idle 五分钟——哪一动会让缓存全废。</div>
+        </div>
+        <span class="arrow">→</span>
+      </div>
+    </a>
+  </nav>
+
+  <div class="foot">
+    Source · <a href="https://github.com/zhangchitc/claude_code">github.com/zhangchitc/claude_code</a>
+  </div>
+</main>
+</body>
+</html>

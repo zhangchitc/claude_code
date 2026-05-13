@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Code · 把它拆开看看</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Funnel+Sans:wght@400;600;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fdf3df;
+    --ink: #1a1410;
+    --orange: #ff5e1f;
+    --blue: #1f3df0;
+    --yellow: #ffd84a;
+    --pink: #ff8fb1;
+    --green: #2bb673;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Funnel Sans', system-ui, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='2'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.5'/></svg>");
+    opacity: 0.13;
+    mix-blend-mode: multiply;
+    z-index: 100;
+  }
+  .stage {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 64px 36px 100px;
+    position: relative;
+  }
+  .blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(50px);
+    opacity: 0.4;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .blob.a { background: var(--orange); width: 360px; height: 360px; top: -100px; right: -80px; }
+  .blob.b { background: var(--blue); width: 280px; height: 280px; top: 420px; left: -120px; }
+
+  header {
+    position: relative;
+    z-index: 2;
+    margin-bottom: 60px;
+  }
+  .kicker {
+    display: inline-block;
+    background: var(--ink);
+    color: var(--yellow);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    padding: 7px 16px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    transform: rotate(-2deg);
+    margin-bottom: 26px;
+    font-weight: 500;
+  }
+  h1 {
+    font-family: 'Caprasimo', serif;
+    font-weight: 400;
+    font-size: clamp(60px, 9vw, 116px);
+    line-height: 0.92;
+    letter-spacing: -0.018em;
+    color: var(--ink);
+    text-shadow: 6px 6px 0 var(--orange), 12px 12px 0 var(--blue);
+  }
+  .lede {
+    margin-top: 36px;
+    font-size: 19px;
+    line-height: 1.55;
+    max-width: 580px;
+    font-weight: 500;
+  }
+
+  .grid {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+  }
+  .card.hero { grid-column: span 2; min-height: 200px; }
+
+  .card {
+    background: #fff;
+    border: 2.5px solid var(--ink);
+    border-radius: 18px;
+    padding: 26px 24px 56px;
+    text-decoration: none;
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    position: relative;
+    min-height: 200px;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    box-shadow: 5px 5px 0 var(--ink);
+  }
+  .card:hover {
+    transform: translate(-3px, -3px);
+    box-shadow: 10px 10px 0 var(--ink);
+  }
+  .card .badge {
+    align-self: flex-start;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 5px 12px;
+    border-radius: 999px;
+    border: 2px solid var(--ink);
+    font-weight: 500;
+  }
+  .card .ttl {
+    font-family: 'Caprasimo', serif;
+    font-weight: 400;
+    font-size: 30px;
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+  }
+  .card.hero .ttl { font-size: 38px; }
+  .card .desc {
+    font-size: 15px;
+    line-height: 1.5;
+    color: rgba(26,20,16,0.72);
+  }
+  .card.c1 { background: #ffe9d2; }
+  .card.c1 .badge { background: var(--orange); color: #fff; }
+  .card.c2 { background: #dde4ff; }
+  .card.c2 .badge { background: var(--blue); color: #fff; }
+  .card.c3 { background: #fffae0; }
+  .card.c3 .badge { background: var(--ink); color: var(--yellow); }
+  .card.c4 { background: #ffd9e4; }
+  .card.c4 .badge { background: var(--pink); color: var(--ink); }
+  .card.c5 { background: #d6f1e1; }
+  .card.c5 .badge { background: var(--green); color: #fff; }
+  .card.c6 { background: #ffe9d2; }
+  .card.c6 .badge { background: var(--orange); color: #fff; }
+  .card.c7 { background: #dde4ff; }
+  .card.c7 .badge { background: var(--blue); color: #fff; }
+
+  .arrow {
+    position: absolute;
+    bottom: 18px;
+    right: 20px;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: var(--ink);
+    color: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    transition: transform 0.25s ease;
+  }
+  .card:hover .arrow { transform: rotate(-45deg) scale(1.08); }
+
+  footer {
+    margin-top: 72px;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: rgba(26,20,16,0.55);
+    position: relative;
+    z-index: 2;
+    letter-spacing: 0.12em;
+  }
+  footer a { color: var(--orange); text-decoration: none; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="blob a"></div>
+  <div class="blob b"></div>
+
+  <header>
+    <span class="kicker">★ 七张图 · Claude Code 内部</span>
+    <h1>把它拆开<br>看看里面。</h1>
+    <p class="lede">从 API 报文到缓存键值，七张可交互的图——讲清楚 Claude Code 每一步到底在干什么。</p>
+  </header>
+
+  <div class="grid">
+    <a class="card hero c1" href="051_claude_trace/structure_diagram.html">
+      <span class="badge">Protocol</span>
+      <div class="ttl">一句 hello 背后的 API 结构</div>
+      <div class="desc">claude-trace 抓到的完整请求与流式响应剖面——一张图看到 30,986 tokens 是怎么算的。</div>
+      <span class="arrow">↗</span>
+    </a>
+    <a class="card c3" href="052_claude_cache/prefix_cache_demo.html">
+      <span class="badge">Cache</span>
+      <div class="ttl">Prompt Cache 工作原理</div>
+      <div class="desc">三轮对话里缓存怎么滚雪球、怎么省钱。</div>
+      <span class="arrow">↗</span>
+    </a>
+    <a class="card c2" href="053_tool_use/visual_section2.html">
+      <span class="badge">Tool Use</span>
+      <div class="ttl">说 vs 做</div>
+      <div class="desc">模型负责说，客户端负责做——一份很干净的契约。</div>
+      <span class="arrow">↗</span>
+    </a>
+    <a class="card c4" href="054_server_tools/flow.html">
+      <span class="badge">Server Tool</span>
+      <div class="ttl">WebSearch 全流程</div>
+      <div class="desc">3 次 API · 2 个模型 · Brave 真去搜。</div>
+      <span class="arrow">↗</span>
+    </a>
+    <a class="card c5" href="055_claude_cache2/cache_control_demo.html">
+      <span class="badge">Cache 机制</span>
+      <div class="ttl">cache_control 怎么工作</div>
+      <div class="desc">两静一动的 breakpoint，加 lookback 20 格的天花板。</div>
+      <span class="arrow">↗</span>
+    </a>
+    <a class="card c6" href="057_thinking_mode/visual_thinking.html">
+      <span class="badge">Reasoning</span>
+      <div class="ttl">Thinking 模式</div>
+      <div class="desc">运行时架构 + 训练流水线 + content 多出来的那块。</div>
+      <span class="arrow">↗</span>
+    </a>
+    <a class="card c7" href="058_claude_cache3/visual.html">
+      <span class="badge">实战</span>
+      <div class="ttl">Cache 实战避坑</div>
+      <div class="desc">切模型 · 装 MCP · idle 5min——哪一动让缓存全废。</div>
+      <span class="arrow">↗</span>
+    </a>
+  </div>
+
+  <footer>
+    SOURCE · <a href="https://github.com/zhangchitc/claude_code">github.com/zhangchitc/claude_code</a>
+  </footer>
+</div>
+</body>
+</html>
