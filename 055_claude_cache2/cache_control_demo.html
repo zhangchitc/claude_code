@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cache_control 工作机制</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    background: #0f0f0f;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 48px 24px 80px;
+  }
+
+  h1 { font-size: 30px; font-weight: 600; color: #fff; margin-bottom: 32px; }
+
+  /* --- Tabs --- */
+  .turns {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 36px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 1200px;
+  }
+  .turn-btn {
+    padding: 10px 18px;
+    border: 2px solid #333;
+    border-radius: 10px;
+    background: transparent;
+    color: #aaa;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-family: inherit;
+  }
+  .turn-btn:hover { border-color: #555; color: #fff; }
+  .turn-btn.active {
+    border-color: #059669;
+    color: #fff;
+    background: rgba(5, 150, 105, 0.12);
+  }
+
+  /* --- View container --- */
+  .view { display: none; width: 1280px; }
+  .view.active { display: block; }
+
+  .section-label {
+    font-size: 15px;
+    color: #d0d0d0;
+    font-weight: 600;
+    margin-bottom: 14px;
+    margin-top: 4px;
+  }
+
+  /* --- Bar segments --- */
+  .bar-wrap { width: 100%; margin-bottom: 28px; overflow-x: auto; }
+  .prefix-bar {
+    display: flex;
+    height: 64px;
+    border-radius: 8px;
+    overflow: visible;
+    position: relative;
+    width: fit-content;
+  }
+  .seg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 500;
+    color: #fff;
+    position: relative;
+    height: 64px;
+  }
+  .seg.fade { opacity: 0.35; }
+  .seg .inner {
+    padding: 0 10px;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    line-height: 1.25;
+    overflow: hidden;
+    white-space: nowrap;
+    width: 100%;
+  }
+  .seg .token-count {
+    font-size: 14px;
+    opacity: 0.7;
+    margin-top: 3px;
+    font-weight: 400;
+  }
+  .seg-tools        { background: #2d4a3e; }
+  .seg-system       { background: #3a3d5c; }
+  .seg-inject       { background: #4a3a2e; }
+  .seg-input        { background: #1a3a5c; }
+  .seg-asst         { background: #3a2d4a; }
+  .seg-tooluse      { background: #4a2d3a; }
+  .seg-toolresult   { background: #2d3a4a; }
+  .seg.cold         { background: #5a1f1a !important; }
+
+  /* --- Breakpoint markers --- */
+  .bp {
+    position: absolute;
+    right: 0;
+    top: -4px;
+    bottom: -4px;
+    width: 3px;
+    z-index: 10;
+  }
+  .bp.bp-anchor { background: #38bdf8; box-shadow: 0 0 4px rgba(56,189,248,0.5); }
+  .bp.bp-cursor { background: #ff8a3d; box-shadow: 0 0 6px rgba(255,138,61,0.6); z-index: 12; }
+  .bp::after {
+    content: '';
+    position: absolute;
+    top: -8px;
+    right: -7px;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: inherit;
+    z-index: 6;
+  }
+  .bp .lbl {
+    position: absolute;
+    top: -40px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 14px;
+    color: #ddd;
+    white-space: nowrap;
+    background: #1a1a1a;
+    padding: 4px 10px;
+    border-radius: 5px;
+    font-family: "SF Mono", Menlo, monospace;
+    border: 1px solid #2a2a2a;
+  }
+  .bp.bp-anchor .lbl { color: #38bdf8; border-color: #38bdf8; }
+  .bp.bp-cursor .lbl { color: #ff8a3d; border-color: #ff8a3d; }
+
+  /* --- JSON box --- */
+  .json-box {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 24px 28px;
+    font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 14px;
+    line-height: 1.95;
+    color: #cdd6f4;
+  }
+  .json-box .dim { color: #9a9ab0; }
+  .json-box .pill {
+    background: #ff8a3d;
+    color: #0f0f0f;
+    padding: 2px 9px;
+    border-radius: 5px;
+    font-weight: 700;
+    font-size: 12px;
+  }
+  .json-box .anchor-pill {
+    background: #38bdf8;
+    color: #0f0f0f;
+    padding: 2px 9px;
+    border-radius: 5px;
+    font-weight: 700;
+    font-size: 12px;
+  }
+  .json-box .marker { font-weight: 700; margin-left: 14px; font-size: 12px; }
+  .json-box .marker.cursor { color: #ff8a3d; }
+  .json-box .marker.anchor { color: #38bdf8; }
+  .json-box .nullval { color: #b0b0b0; font-style: italic; }
+
+  /* --- Two-col mode comparison --- */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 28px;
+  }
+  .mode-card {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .mode-card .rule {
+    background: #0f0f0f;
+    border: 1px solid #2a2a2a;
+    border-radius: 7px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: #d0d0d0;
+    line-height: 1.55;
+    margin-bottom: 6px;
+  }
+  .mode-card.choice {
+    border-color: #059669;
+    background: rgba(5, 150, 105, 0.07);
+  }
+  .mode-card .tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 700;
+    background: #2a2a2a;
+    color: #d0d0d0;
+    letter-spacing: 0.5px;
+  }
+  .mode-card.choice .tag { background: #059669; color: #fff; }
+  .cc-pick {
+    margin-top: 24px;
+    text-align: center;
+    font-size: 15px;
+    color: #d0d0d0;
+  }
+  .cc-pick strong { color: #fff; }
+  .cc-pick .arrow { color: #ff8a3d; margin: 0 8px; }
+
+  /* --- Three-row layout (turns side-by-side) --- */
+  .turn-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 18px;
+    margin-bottom: 26px;
+  }
+  .turn-row.read-row { margin-bottom: 70px; }
+  .turn-row .turn-tag {
+    flex: 0 0 124px;
+    text-align: center;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 12px 8px;
+    font-size: 14px;
+    color: #d0d0d0;
+    line-height: 1.55;
+  }
+  .turn-row .turn-tag .num {
+    display: block;
+    font-size: 17px;
+    color: #fff;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .turn-row .bar-area { flex: 1; min-width: 0; overflow: visible; padding-top: 52px; padding-bottom: 0; }
+
+  /* --- Cache entry rows (原理1 写) --- */
+  .entry-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .entry-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    height: 44px;
+  }
+  .entry-row .e-label {
+    flex: 0 0 92px;
+    font-size: 14px;
+    color: #d0d0d0;
+    text-align: left;
+    font-family: "SF Mono", Menlo, monospace;
+  }
+  .entry-row .e-bar {
+    height: 32px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 14px;
+    font-family: "SF Mono", Menlo, monospace;
+    color: #fff;
+  }
+  .e-bar.e1 { background: #d97706; width: 410px; }   /* 对齐 bp1 = tools+sys[0]+sys[1] */
+  .e-bar.e2 { background: #d97706; width: 590px; }   /* 对齐 bp2 = +sys[2] */
+  .e-bar.e3 { background: #d97706; width: 720px; }   /* 对齐 bp3 = +hello */
+
+  /* --- Lookback arrows --- */
+  .arrow-lookback {
+    position: absolute;
+    top: -20px;
+    height: 18px;
+    border-top: 2px dashed #ff8a3d;
+    border-left: 2px dashed #ff8a3d;
+    border-top-left-radius: 8px;
+  }
+  .arrow-lookback::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    bottom: -2px;
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 8px solid #ff8a3d;
+  }
+  .miss-x {
+    position: absolute;
+    top: -54px;
+    color: #f87171;
+    font-size: 28px;
+    font-weight: 700;
+    z-index: 14;
+    text-shadow: 0 0 8px rgba(220,38,38,0.7);
+    line-height: 1;
+  }
+  .hit-check {
+    position: absolute;
+    top: -54px;
+    color: #10b981;
+    font-size: 28px;
+    font-weight: 700;
+    text-shadow: 0 0 10px rgba(16,185,129,0.8);
+    z-index: 14;
+    line-height: 1;
+  }
+  .write-tag {
+    position: absolute;
+    bottom: -38px;
+    background: rgba(217,119,6,0.12);
+    border: 1px solid #d97706;
+    color: #f59e0b;
+    font-size: 14px;
+    font-family: "SF Mono", Menlo, monospace;
+    padding: 4px 12px;
+    border-radius: 5px;
+    white-space: nowrap;
+    z-index: 8;
+  }
+
+  /* --- 20-grid window --- */
+  .window-20 {
+    position: absolute;
+    top: -8px;
+    bottom: -8px;
+    border: 2px dashed #888;
+    border-radius: 6px;
+    background: rgba(120,120,120,0.08);
+    pointer-events: none;
+    z-index: 3;
+  }
+  .window-20::before {
+    content: 'lookback 20格上限';
+    position: absolute;
+    top: -28px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1a1a;
+    border: 1px solid #555;
+    color: #ccc;
+    font-size: 14px;
+    padding: 4px 12px;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+
+  /* --- Note / formula --- */
+  .note-box {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 18px 24px;
+    font-size: 14px;
+    line-height: 1.8;
+    color: #d0d0d0;
+  }
+  .note-box .hl-cursor { color: #ff8a3d; font-weight: 600; }
+  .note-box .hl-anchor { color: #38bdf8; font-weight: 600; }
+  .note-box .hl-green  { color: #10b981; font-weight: 600; }
+  .note-box .hl-red    { color: #f87171; font-weight: 600; }
+  .note-box .hl-orange { color: #f59e0b; font-weight: 600; }
+  .note-box .pill {
+    background: #1a1a1a;
+    color: #fff;
+    padding: 2px 8px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 12px;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 20px;
+    margin: 8px 0 20px;
+    font-size: 14px;
+    color: #d0d0d0;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+
+  /* tool storm specific */
+  .storm-block {
+    width: 18px;
+    border-right: 1px solid rgba(0,0,0,0.3);
+  }
+
+  /* lookback animation */
+  @keyframes pulse-orange {
+    0%, 100% { box-shadow: 0 0 6px rgba(255,138,61,0.6); }
+    50%      { box-shadow: 0 0 14px rgba(255,138,61,1); }
+  }
+  .bp.bp-cursor { animation: pulse-orange 2s infinite; }
+</style>
+</head>
+<body>
+
+<h1>cache_control 工作机制</h1>
+
+<div class="turns">
+  <button class="turn-btn active" onclick="showView('mode')">两种模式</button>
+  <button class="turn-btn" onclick="showView('cursor')">两静一动</button>
+  <button class="turn-btn" onclick="showView('write')">写缓存原理</button>
+  <button class="turn-btn" onclick="showView('read')">读缓存原理</button>
+  <button class="turn-btn" onclick="showView('window')">lookback 原理</button>
+</div>
+
+<!-- ============ View 1: Two modes ============ -->
+<div class="view active" id="view-mode">
+  <div style="width: 900px; margin: 0 auto;">
+  <div class="section-label">cache_control 的两种用法</div>
+  <div class="two-col">
+    <div class="mode-card">
+      <div class="tag" style="margin-bottom:12px">AUTOMATIC</div>
+      <div class="rule">请求顶层挂 <span style="background:#1a1a1a;border:1px solid #555;padding:1px 6px;border-radius:4px;font-family:'SF Mono',Menlo,monospace;font-size:12px">cache_control: {...}</span></div>
+      <div class="rule">服务器自动打最后一个 block · 最多 1 个</div>
+    </div>
+    <div class="mode-card choice">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div class="tag">EXPLICIT</div>
+        <span style="color:#10b981;font-size:12px;font-weight:600">✓ Claude Code 用的就是这种</span>
+      </div>
+      <div class="rule">block 上挂 <span style="background:#1a1a1a;border:1px solid #555;padding:1px 6px;border-radius:4px;font-family:'SF Mono',Menlo,monospace;font-size:12px">cache_control: {...}</span></div>
+      <div class="rule">位置自己挑 · 最多 4 个</div>
+    </div>
+  </div>
+
+  <div class="section-label">Claude Code 请求 JSON · 3 个明文 breakpoint</div>
+  <div class="json-box">
+    <div><span class="dim">{</span></div>
+    <div style="padding-left:24px"><span class="dim">"cache_control":</span> <span class="nullval">null</span><span class="dim">,</span> <span style="color:#c8c8c8;margin-left:16px;font-size:13px">← 顶层为 null = 不是 Automatic</span></div>
+    <div style="padding-left:24px"><span class="dim">"tools":</span> <span class="dim">[ 29 items ],</span></div>
+    <div style="padding-left:24px"><span class="dim">"system":</span> <span class="dim">[</span></div>
+    <div style="padding-left:48px"><span class="dim">{ ... },</span> <span style="color:#c0c0c0;font-size:13px;margin-left:8px">// system[0]</span></div>
+    <div style="padding-left:48px"><span class="dim">{ ..., </span><span class="anchor-pill">cache_control</span><span class="dim"> },</span> <span class="marker anchor">← breakpoint 1 · 静止</span></div>
+    <div style="padding-left:48px"><span class="dim">{ ..., </span><span class="anchor-pill">cache_control</span><span class="dim"> },</span> <span class="marker anchor">← breakpoint 2 · 静止</span></div>
+    <div style="padding-left:24px"><span class="dim">],</span></div>
+    <div style="padding-left:24px"><span class="dim">"messages":</span> <span class="dim">[ ..., (末尾)</span></div>
+    <div style="padding-left:48px"><span class="dim">{ ..., </span><span class="pill">cache_control</span><span class="dim"> }</span> <span class="marker cursor">← breakpoint 3 · 移动</span></div>
+    <div style="padding-left:24px"><span class="dim">]</span></div>
+    <div><span class="dim">}</span></div>
+  </div>
+
+  <div class="cc-pick">
+    全在 block 上 = <strong>Explicit</strong>　<span class="arrow">→</span>　用了 3 个 / 上限 4 个 · 留 1 个空位
+  </div>
+  </div>
+</div>
+
+<!-- ============ View 2: Two anchors + one cursor ============ -->
+<div class="view" id="view-cursor">
+  <div id="cursor-rows"></div>
+
+  <div class="note-box">
+    第 1、2 个 breakpoint <span class="hl-anchor">永远钉在 system 末尾</span>，三轮一动不动 → <span class="hl-anchor">静止</span>。<br>
+    第 3 个 breakpoint <span class="hl-cursor">每轮跟着最新 user 消息往后跑</span> → <span class="hl-cursor">移动</span>。<br>
+    <span class="pill">Claude Code 的 Explicit</span> = 2 静止 + 1 移动。
+  </div>
+</div>
+
+<!-- ============ View 3: Principle 1 - Write ============ -->
+<div class="view" id="view-write">
+  <div style="width: 826px; margin: 0 auto;">
+    <div class="section-label">原理 1：缓存只在 breakpoint 位置写，键值就是从开头到这里的累积 prefix 的哈希值</div>
+
+    <div class="bar-wrap" style="padding-top:54px;padding-bottom:8px;">
+      <div class="prefix-bar" id="write-bar"></div>
+    </div>
+
+    <div class="section-label" style="margin-top:8px">3 次 cache write · 3 条 hash 嵌套</div>
+
+    <div class="entry-stack">
+      <div class="entry-row">
+        <div class="e-bar e1">hash( tools + system[0] + system[1] )</div>
+        <div class="e-label">第 1 条</div>
+      </div>
+      <div class="entry-row">
+        <div class="e-bar e2">hash( tools + system[0] + system[1] + system[2] )</div>
+        <div class="e-label">第 2 条</div>
+      </div>
+      <div class="entry-row">
+        <div class="e-bar e3">hash( tools + system[0] + system[1] + system[2] + user "hello" )</div>
+        <div class="e-label">第 3 条</div>
+      </div>
+    </div>
+
+    <div class="note-box">
+      每条缓存的 hash 算的是 <strong>从开头到这个 breakpoint 所有内容</strong>，覆盖范围一条比一条长。<br>
+      <span class="pill">29 个 tools 没标 cache_control 也被缓存</span> — 它蹭了 system[1] 那条的车一起打包写进去。
+    </div>
+  </div>
+</div>
+
+<!-- ============ View 4: Principle 2 - Read (lookback hits) ============ -->
+<div class="view" id="view-read">
+  <div class="section-label">原理 2：在 breakpoint 位置查不到，往前一个 block 再查，找的是"之前写过的缓存"</div>
+
+  <div id="read-rows"></div>
+
+  <div class="note-box" style="margin-top:18px">
+    <strong>每轮第 3 个 breakpoint 往后挪一两块，lookback 翻几格就能找到上一轮在前一个 user 消息上的写入。</strong>
+  </div>
+</div>
+
+<!-- ============ View 5: Principle 3 - 20 lookback limit ============ -->
+<div class="view" id="view-window">
+  <div class="section-label">原理 3：lookback 最多往回 20 个 block，找不到就放弃</div>
+
+  <div class="bar-wrap" style="padding-top:54px;padding-bottom:80px;">
+    <div class="prefix-bar" id="window-bar" style="position:relative"></div>
+  </div>
+
+  <div class="note-box">
+    <strong>日常聊天滚雪球能滚得很稳，因为单轮就几个 block。但只要某一轮内部产生的 block 撑爆 20 格窗口，下一轮 cache 就直接掉。</strong>
+  </div>
+</div>
+
+<script>
+/* ===========================================================
+   Pixel widths shared across views — same content, same width
+   =========================================================== */
+const W = {
+  tools: 210,
+  sys0: 80,
+  sys1: 120,
+  sys2: 180,
+  inject: 130,
+  userHello: 130,
+  userFine: 90,
+  userThanks: 130,
+  userContinue: 100,
+  asst: 100,
+  storm: 18,   // narrow tool_use / tool_result block (no text)
+};
+
+/* ---------- helper segments ---------- */
+function seg(cls, w, label, sub, opts = {}) {
+  const fade = opts.fade ? ' fade' : '';
+  const cold = opts.cold ? ' cold' : '';
+  const lblStyle = opts.lblLeft ? ' style="left:auto;right:0;transform:translateX(0);"' : '';
+  const bp = opts.bp
+    ? `<div class="bp ${opts.bp}">${opts.bpLabel ? `<span class="lbl"${lblStyle}>${opts.bpLabel}</span>` : ''}</div>`
+    : '';
+  const fontSize = opts.smallFont ? 'font-size:14px' : '';
+  const subHtml = sub ? `<span class="token-count">${sub}</span>` : '';
+  return `<div class="seg ${cls}${fade}${cold}" style="width:${w}px">
+    <div class="inner" style="${fontSize}">${label}${subHtml}</div>
+    ${bp}
+  </div>`;
+}
+
+function tinyBlock(cls, fade) {
+  return `<div class="seg ${cls}${fade ? ' fade' : ''}" style="width:${W.storm}px"></div>`;
+}
+
+/* ===========================================================
+   View 2 (cursor): three turns side-by-side
+   =========================================================== */
+function buildCursorRows() {
+  const rows = document.getElementById('cursor-rows');
+
+  // Turn 1: hello
+  const r1 = `
+    <div class="turn-row">
+      <div class="turn-tag"><span class="num">第 1 轮</span>"hello"</div>
+      <div class="bar-area">
+        <div class="prefix-bar">
+          ${seg('seg-tools', W.tools, 'tools', '29 个工具')}
+          ${seg('seg-system', W.sys0, 'sys[0]', '')}
+          ${seg('seg-system', W.sys1, 'sys[1]', '身份提示词', { bp: 'bp-anchor', bpLabel: 'bp1 · 静止' })}
+          ${seg('seg-system', W.sys2, 'sys[2]', '行为准则', { bp: 'bp-anchor', bpLabel: 'bp2 · 静止' })}
+          ${seg('seg-input', W.userHello, '"hello"', '', { bp: 'bp-cursor', bpLabel: 'bp3 · 移动', smallFont: true })}
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Turn 2: fine
+  const r2 = `
+    <div class="turn-row">
+      <div class="turn-tag"><span class="num">第 2 轮</span>"fine"</div>
+      <div class="bar-area">
+        <div class="prefix-bar">
+          ${seg('seg-tools', W.tools, 'tools', '29 个工具')}
+          ${seg('seg-system', W.sys0, 'sys[0]', '')}
+          ${seg('seg-system', W.sys1, 'sys[1]', '身份提示词', { bp: 'bp-anchor', bpLabel: 'bp1 · 不动' })}
+          ${seg('seg-system', W.sys2, 'sys[2]', '行为准则', { bp: 'bp-anchor', bpLabel: 'bp2 · 不动' })}
+          ${seg('seg-input', W.userHello, '"hello"', '', { smallFont: true, fade: true })}
+          ${seg('seg-asst', W.asst, 'asst 回复', '', { smallFont: true })}
+          ${seg('seg-input', W.userFine, '"fine"', '', { bp: 'bp-cursor', bpLabel: 'bp3 → 移到这', smallFont: true })}
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Turn 3: thank you
+  const r3 = `
+    <div class="turn-row">
+      <div class="turn-tag"><span class="num">第 3 轮</span>"thank you"</div>
+      <div class="bar-area">
+        <div class="prefix-bar">
+          ${seg('seg-tools', W.tools, 'tools', '29 个工具')}
+          ${seg('seg-system', W.sys0, 'sys[0]', '')}
+          ${seg('seg-system', W.sys1, 'sys[1]', '身份提示词', { bp: 'bp-anchor', bpLabel: 'bp1 · 不动' })}
+          ${seg('seg-system', W.sys2, 'sys[2]', '行为准则', { bp: 'bp-anchor', bpLabel: 'bp2 · 不动' })}
+          ${seg('seg-input', W.userHello, '"hello"', '', { smallFont: true, fade: true })}
+          ${seg('seg-asst', W.asst, 'asst 回复', '', { smallFont: true, fade: true })}
+          ${seg('seg-input', W.userFine, '"fine"', '', { smallFont: true, fade: true })}
+          ${seg('seg-asst', W.asst, 'asst 回复', '', { smallFont: true })}
+          ${seg('seg-input', W.userThanks, '"thank you"', '', { bp: 'bp-cursor', bpLabel: 'bp3 → 又移到这', smallFont: true, lblLeft: true })}
+        </div>
+      </div>
+    </div>
+  `;
+
+  rows.innerHTML = r1 + r2 + r3;
+}
+
+/* ===========================================================
+   View 3 (write): single bar with all 3 breakpoints
+   =========================================================== */
+function buildWriteBar() {
+  const bar = document.getElementById('write-bar');
+  bar.innerHTML = `
+    ${seg('seg-tools', W.tools, 'tools', '29 个工具定义')}
+    ${seg('seg-system', W.sys0, 'sys[0]', '')}
+    ${seg('seg-system', W.sys1, 'sys[1]', '身份提示词', { bp: 'bp-anchor', bpLabel: 'bp1' })}
+    ${seg('seg-system', W.sys2, 'sys[2]', '行为准则', { bp: 'bp-anchor', bpLabel: 'bp2' })}
+    ${seg('seg-input', W.userHello, '"hello"', '', { bp: 'bp-cursor', bpLabel: 'bp3', smallFont: true })}
+  `;
+}
+
+/* ===========================================================
+   View 4 (read): three turn rows with lookback arrows
+   =========================================================== */
+function buildReadRows() {
+  const container = document.getElementById('read-rows');
+
+  // Block reference widths
+  const PREFIX_W = W.tools + W.sys0 + W.sys1 + W.sys2;  // 580
+  const HELLO_END = PREFIX_W + W.userHello;
+  const FINE_END = PREFIX_W + W.userHello + W.asst + W.userFine;
+  const THANKS_END = PREFIX_W + W.userHello + W.asst + W.userFine + W.asst + W.userThanks;
+
+  // Turn 1: 3 misses
+  const r1 = `
+    <div class="turn-row read-row">
+      <div class="turn-tag"><span class="num">第 1 轮</span>"hello"<br><span style="color:#b0b0b0">3 次 miss</span></div>
+      <div class="bar-area" style="position:relative">
+        <div class="prefix-bar" style="position:relative">
+          ${seg('seg-tools', W.tools, 'tools', '')}
+          ${seg('seg-system', W.sys0, 'sys[0]', '')}
+          ${seg('seg-system', W.sys1, 'sys[1]', '', { bp: 'bp-anchor' })}
+          ${seg('seg-system', W.sys2, 'sys[2]', '', { bp: 'bp-anchor' })}
+          ${seg('seg-input', W.userHello, '"hello"', '', { bp: 'bp-cursor', smallFont: true })}
+          <div class="miss-x" style="left:${W.tools + W.sys0 + W.sys1 - 9}px">×</div>
+          <div class="miss-x" style="left:${W.tools + W.sys0 + W.sys1 + W.sys2 - 9}px">×</div>
+          <div class="miss-x" style="left:${HELLO_END - 9}px">×</div>
+          <div class="write-tag" style="left:${HELLO_END - 70}px;">→ 在 hello 写一条新的</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Turn 2: fine looks back to hello
+  const r2_hello_x = HELLO_END;     // hello segment ends here (lookback target)
+  const r2_asst_x = HELLO_END + W.asst;
+  const r2_fine_x = FINE_END;
+  const r2 = `
+    <div class="turn-row read-row">
+      <div class="turn-tag"><span class="num">第 2 轮</span>"fine"<br><span style="color:#10b981">命中 hello 位置</span></div>
+      <div class="bar-area" style="position:relative">
+        <div class="prefix-bar" style="position:relative">
+          ${seg('seg-tools', W.tools, 'tools', '')}
+          ${seg('seg-system', W.sys0, 'sys[0]', '')}
+          ${seg('seg-system', W.sys1, 'sys[1]', '', { bp: 'bp-anchor' })}
+          ${seg('seg-system', W.sys2, 'sys[2]', '', { bp: 'bp-anchor' })}
+          ${seg('seg-input', W.userHello, '"hello"', '', { smallFont: true, fade: true })}
+          ${seg('seg-asst', W.asst, 'asst 回复', '', { smallFont: true })}
+          ${seg('seg-input', W.userFine, '"fine"', '', { bp: 'bp-cursor', smallFont: true })}
+          <!-- lookback: cursor → asst (miss) → hello (hit) -->
+          <div class="arrow-lookback" style="left:${r2_hello_x - 4}px;width:${r2_fine_x - r2_hello_x + 4}px;"></div>
+          <div class="miss-x" style="left:${r2_asst_x - 9}px">×</div>
+          <div class="miss-x" style="left:${r2_fine_x - 9}px">×</div>
+          <div class="hit-check" style="left:${r2_hello_x - 9}px">✓</div>
+          <div class="write-tag" style="left:${r2_fine_x - 64}px;">→ 在 fine 写一条新的</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Turn 3: thank you looks back to fine
+  const r3_fine_x = FINE_END;
+  const r3_asst_x = FINE_END + W.asst;
+  const r3_thx_x = THANKS_END;
+  const r3 = `
+    <div class="turn-row read-row">
+      <div class="turn-tag"><span class="num">第 3 轮</span>"thank you"<br><span style="color:#10b981">命中 fine 位置</span></div>
+      <div class="bar-area" style="position:relative">
+        <div class="prefix-bar" style="position:relative">
+          ${seg('seg-tools', W.tools, 'tools', '')}
+          ${seg('seg-system', W.sys0, 'sys[0]', '')}
+          ${seg('seg-system', W.sys1, 'sys[1]', '', { bp: 'bp-anchor' })}
+          ${seg('seg-system', W.sys2, 'sys[2]', '', { bp: 'bp-anchor' })}
+          ${seg('seg-input', W.userHello, '"hello"', '', { smallFont: true, fade: true })}
+          ${seg('seg-asst', W.asst, 'asst', '', { smallFont: true, fade: true })}
+          ${seg('seg-input', W.userFine, '"fine"', '', { smallFont: true, fade: true })}
+          ${seg('seg-asst', W.asst, 'asst 回复', '', { smallFont: true })}
+          ${seg('seg-input', W.userThanks, '"thank you"', '', { bp: 'bp-cursor', smallFont: true })}
+          <div class="arrow-lookback" style="left:${r3_fine_x - 4}px;width:${r3_thx_x - r3_fine_x + 4}px;"></div>
+          <div class="miss-x" style="left:${r3_asst_x - 9}px">×</div>
+          <div class="miss-x" style="left:${r3_thx_x - 9}px">×</div>
+          <div class="hit-check" style="left:${r3_fine_x - 9}px">✓</div>
+          <div class="write-tag" style="right:0;">→ 在 thank you 写一条新的</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = r1 + r2 + r3;
+}
+
+/* ===========================================================
+   View 5 (window): tool storm blowing past 20-block lookback
+   =========================================================== */
+function buildWindowBar() {
+  const bar = document.getElementById('window-bar');
+
+  const PREFIX_W = W.tools + W.sys0 + W.sys1 + W.sys2;
+  const stormCount = 22;  // 22 narrow tool_use/tool_result blocks
+  let storm = '';
+  for (let i = 0; i < stormCount; i++) {
+    storm += tinyBlock(i % 2 === 0 ? 'seg-tooluse' : 'seg-toolresult');
+  }
+
+  // Compute the 20-block window: covers the last 20 blocks before "继续"
+  // The continue cursor is the 21st block from the end (after 22 storm blocks + continue itself)
+  // Window covers continue + 19 storm blocks before it = 20 blocks total
+  const stormBlockW = W.storm;
+  const windowBlocks = 20;
+  // The cursor (continue) is the rightmost. Window includes cursor + 19 blocks to its left
+  const windowWidth = (windowBlocks - 1) * stormBlockW + W.userContinue + 8;
+  const totalBefore = PREFIX_W + W.userThanks + (stormCount - (windowBlocks - 1)) * stormBlockW;
+
+  bar.innerHTML = `
+    ${seg('seg-tools', W.tools, 'tools', '冷启动', { cold: true })}
+    ${seg('seg-system', W.sys0, 'sys[0]', '', { cold: true })}
+    ${seg('seg-system', W.sys1, 'sys[1]', '', { cold: true, bp: 'bp-anchor' })}
+    ${seg('seg-system', W.sys2, 'sys[2]', '', { cold: true, bp: 'bp-anchor' })}
+    ${seg('seg-input', W.userThanks, '"thank you"', '上轮 bp3', { smallFont: true, fade: true })}
+    ${storm}
+    ${seg('seg-input', W.userContinue, '"继续"', '', { bp: 'bp-cursor', bpLabel: 'bp3 · 移动', smallFont: true })}
+    <div class="window-20" style="left:${totalBefore - 4}px;width:${windowWidth}px;"></div>
+    <div style="position:absolute;left:${PREFIX_W + 4}px;top:80px;font-size:14px;color:#f87171;font-family:'SF Mono',Menlo,monospace;background:#1a1a1a;border:1px solid #5a1f1a;padding:5px 12px;border-radius:6px;white-space:nowrap;">↑ thank you 在窗口外 → 缓存找不到，整段 prefix 冷启动</div>
+  `;
+}
+
+/* ===========================================================
+   Tab control
+   =========================================================== */
+function showView(key) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + key).classList.add('active');
+  const idx = ['mode','cursor','write','read','window'].indexOf(key);
+  document.querySelectorAll('.turn-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
+}
+
+/* Init all views */
+buildCursorRows();
+buildWriteBar();
+buildReadRows();
+buildWindowBar();
+</script>
+
+</body>
+</html>

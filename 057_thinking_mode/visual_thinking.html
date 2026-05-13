@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Thinking 模式 — 运行时架构 + 训练流水线</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    background: #fdf6ec;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 32px 24px;
+    color: #1a1a1a;
+  }
+  .stage {
+    width: 1280px;
+    background: #ffffff;
+    border-radius: 24px;
+    padding: 28px 48px 32px;
+    box-shadow: 0 24px 60px rgba(120, 70, 20, 0.12);
+    position: relative;
+  }
+  .stage::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 8px;
+    border-radius: 24px 0 0 24px;
+    background: linear-gradient(180deg, #ff8a3d 0%, #ffb070 100%);
+  }
+
+  /* ===== Tabs (low-attention chrome, own row, right-aligned) ===== */
+  .tabs {
+    display: flex;
+    gap: 2px;
+    background: #fbf4ea;
+    padding: 3px;
+    border-radius: 999px;
+    width: fit-content;
+    margin: 0 0 14px auto;
+  }
+  .tab {
+    background: transparent;
+    border: none;
+    color: #b8a890;
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: -0.1px;
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  .tab:hover { color: #c75a1f; }
+  .tab.active {
+    background: #fff;
+    color: #c75a1f;
+    font-weight: 700;
+    box-shadow: 0 1px 3px rgba(199, 90, 31, 0.12);
+  }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ===== Hero (shared) ===== */
+  .quote {
+    text-align: center;
+    margin-bottom: 18px;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    color: #0d0d0d;
+    line-height: 1.3;
+  }
+  .quote .term {
+    color: #fff;
+    background: #1a1a1a;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 22px;
+    letter-spacing: -0.5px;
+    padding: 4px 12px;
+    border-radius: 9px;
+    display: inline-block;
+    vertical-align: 2px;
+    margin-right: 4px;
+  }
+  .quote .pos { color: #c75a1f; }
+  .quote .neg { color: #98886e; }
+
+  /* ===== Two-column split (shared) ===== */
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    align-items: stretch;
+  }
+  .col { display: flex; flex-direction: column; }
+  .col-header {
+    margin-bottom: 14px;
+    padding: 16px 22px;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 16px;
+    line-height: 1.2;
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 6px 18px rgba(120, 70, 20, 0.08);
+  }
+  .col-header.cool { border: 2px solid #cfe0f0; }
+  .col-header.warm { border: 2px solid #ffd9b3; }
+  .mode-name { font-size: 32px; font-weight: 800; letter-spacing: -0.5px; }
+  .mode-name.cool { color: #2c5d8c; }
+  .mode-name.warm { color: #c75a1f; }
+  .mode-sep { font-size: 22px; color: #c8b8a8; font-weight: 600; }
+  .mode-sub { font-size: 22px; font-weight: 700; letter-spacing: -0.2px; line-height: 1.2; }
+  .mode-sub.cool { color: #4a7aa6; }
+  .mode-sub.warm { color: #c75a1f; }
+
+  .panel {
+    border-radius: 16px;
+    padding: 16px 20px 14px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+  .panel.cool { background: #f1f6fb; border: 2px solid #cfe0f0; }
+  .panel.warm { background: #fff4e8; border: 2px solid #ffd9b3; }
+
+  .vflow {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+  .varrow {
+    align-self: center;
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .varrow.cool { color: #2c5d8c; }
+  .varrow.warm { color: #c75a1f; }
+
+  /* ===== Tab 1: Runtime architecture ===== */
+  .box {
+    background: #fff;
+    border: 1.5px solid #e8d8c4;
+    border-radius: 10px;
+    padding: 10px 14px;
+  }
+  .box-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #1a1a1a;
+    letter-spacing: -0.2px;
+  }
+  .box-sub {
+    font-size: 14px;
+    color: #98886e;
+    line-height: 1.45;
+    margin-top: 2px;
+  }
+  .ctx-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 14px;
+    row-gap: 1px;
+    margin-top: 4px;
+  }
+  .ctx-grid li {
+    list-style: none;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #2c5d8c;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-weight: 600;
+  }
+  .panel.warm .ctx-grid li { color: #c75a1f; }
+  .box.transformer {
+    background: #1a1a1a;
+    border-color: #1a1a1a;
+    color: #fff;
+    text-align: center;
+    padding: 8px 14px;
+  }
+  .box.transformer .box-title {
+    color: #fff;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 16px;
+  }
+  .box.transformer .box-sub {
+    color: #aaa;
+    font-size: 14px;
+    margin-top: 0;
+  }
+  .box.thinking-tokens {
+    background: linear-gradient(135deg, #ff8a3d 0%, #ffb070 100%);
+    border: 2px solid #c75a1f;
+    box-shadow: 0 4px 12px rgba(199, 90, 31, 0.3);
+  }
+  .box.thinking-tokens .box-title {
+    color: #fff;
+    font-size: 17px;
+  }
+  .box.thinking-tokens .box-sub {
+    color: rgba(255,255,255,0.95);
+    font-size: 14px;
+  }
+  .tt-tags { display: flex; gap: 6px; margin-top: 4px; }
+  .tt-tag {
+    font-size: 14px;
+    color: #fff;
+    background: rgba(0,0,0,0.18);
+    padding: 1px 8px;
+    border-radius: 5px;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-weight: 600;
+  }
+  .action-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 4px;
+  }
+  .action-pill {
+    font-size: 14px;
+    color: #555;
+    background: rgba(44, 93, 140, 0.10);
+    padding: 1px 9px;
+    border-radius: 5px;
+    font-weight: 600;
+  }
+  .panel.warm .action-pill { background: rgba(199, 90, 31, 0.10); }
+  .loop-back {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: rgba(199, 90, 31, 0.10);
+    border: 1.5px dashed #c75a1f;
+    border-radius: 8px;
+  }
+  .loop-arrow {
+    font-size: 18px;
+    color: #c75a1f;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .loop-label {
+    font-size: 14px;
+    font-weight: 700;
+    color: #c75a1f;
+    line-height: 1.4;
+  }
+  .loop-label code {
+    background: rgba(199, 90, 31, 0.18);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 14px;
+  }
+  .panel-note {
+    margin-top: 10px;
+    text-align: center;
+    font-size: 14px;
+    color: #5a7a96;
+    font-weight: 600;
+  }
+  .panel-note.warm { color: #c75a1f; }
+
+  /* Tab 1 footer formulas */
+  .footer-formulas {
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px dashed #e8d8c4;
+    display: flex;
+    justify-content: center;
+  }
+  .footer-formulas-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .formula-row-runtime {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+  }
+  .formula-label {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+  }
+  .formula-label.cool { color: #2c5d8c; }
+  .formula-label.warm { color: #c75a1f; }
+  .formula-sep {
+    font-size: 18px;
+    color: #c8b8a8;
+    font-weight: 600;
+  }
+  .formula {
+    font-size: 20px;
+    color: #1a1a1a;
+    font-weight: 700;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    letter-spacing: -0.2px;
+  }
+  .formula .arr {
+    color: #c8b8a8;
+    margin: 0 6px;
+  }
+  .formula .reasoning {
+    color: #fff;
+    background: #c75a1f;
+    padding: 1px 10px;
+    border-radius: 6px;
+  }
+
+  /* ===== Tab 2: Training pipeline ===== */
+  .pipeline-label {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    color: #98886e;
+    text-align: center;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+  }
+
+  .stage-box {
+    background: #fff;
+    border: 1.5px solid #e8d8c4;
+    border-radius: 10px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    line-height: 1.3;
+  }
+  .stage-name {
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    color: #1a1a1a;
+    white-space: nowrap;
+  }
+  .stage-cn {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1a1a1a;
+  }
+  .stage-sub {
+    font-size: 14px;
+    color: #98886e;
+    line-height: 1.45;
+    margin-left: auto;
+  }
+  .stage-box.highlight {
+    background: linear-gradient(135deg, #ff8a3d 0%, #ffb070 100%);
+    border: 2px solid #c75a1f;
+    box-shadow: 0 4px 14px rgba(199, 90, 31, 0.32);
+    padding: 12px 16px;
+    position: relative;
+  }
+  .stage-box.highlight .stage-name,
+  .stage-box.highlight .stage-cn { color: #fff; font-size: 17px; }
+  .stage-box.highlight .stage-sub { color: rgba(255,255,255,0.95); font-weight: 600; }
+  .stage-box.highlight .star {
+    position: absolute;
+    left: -10px; top: -12px;
+    background: #1a1a1a;
+    color: #ffb070;
+    font-size: 14px;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 999px;
+    letter-spacing: 0.4px;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+  }
+
+  /* Tab 4: Reasoning Tuning training data zoom-in */
+  .train-data-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    align-items: stretch;
+  }
+  .train-data-bottom {
+    margin-top: 22px;
+    text-align: center;
+    font-size: 16px;
+    color: #6b5a48;
+    font-weight: 600;
+    padding: 14px 20px;
+    background: #fbf4ea;
+    border: 1.5px solid #f1e3d0;
+    border-radius: 12px;
+    line-height: 1.5;
+  }
+  .train-data-bottom .accent {
+    color: #c75a1f;
+    font-weight: 800;
+  }
+  .td-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 14px 16px 16px;
+    border: 2px solid;
+    display: flex;
+    flex-direction: column;
+  }
+  .td-card.td-cool { border-color: #cfe0f0; }
+  .td-card.td-warm { border-color: #ffd9b3; }
+  .td-head {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-bottom: 16px;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .td-cool .td-head { color: #2c5d8c; }
+  .td-warm .td-head { color: #c75a1f; }
+  .td-snippet {
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 14px;
+    line-height: 1.65;
+    color: #1a1a1a;
+    margin: 0;
+    white-space: pre;
+    background: #fbf4ea;
+    border: 1.5px solid #f1e3d0;
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .td-snippet .td-q { color: #98886e; font-weight: 700; }
+  .td-snippet .td-a { color: #2c5d8c; font-weight: 700; }
+  .td-snippet .td-tag-r { color: #c75a1f; font-weight: 800; background: rgba(199, 90, 31, 0.12); padding: 1px 6px; border-radius: 4px; }
+  .td-snippet .td-tag-a { color: #2c5d8c; font-weight: 800; background: rgba(44, 93, 140, 0.10); padding: 1px 6px; border-radius: 4px; }
+  .td-snippet .td-reasoning-body { color: #6b3a14; }
+
+  /* API protocol bridge */
+  .api-bridge {
+    margin-top: 22px;
+    padding: 18px 24px;
+    background: #fbf4ea;
+    border: 2px dashed #ffd9b3;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    justify-content: center;
+  }
+  .api-bridge .label {
+    font-size: 16px;
+    font-weight: 800;
+    color: #c75a1f;
+    line-height: 1.3;
+    flex-shrink: 0;
+  }
+  .api-bridge .label .small {
+    display: block;
+    font-size: 14px;
+    color: #98886e;
+    font-weight: 600;
+    margin-top: 2px;
+  }
+  .api-bridge .field-pill {
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 17px;
+    font-weight: 700;
+    background: #1a1a1a;
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 10px;
+    letter-spacing: -0.2px;
+  }
+  .api-bridge .field-pill .key { color: #ffb070; }
+  .api-bridge .field-pill .val { color: #fff; }
+  .api-bridge .arrow {
+    font-size: 22px;
+    color: #c75a1f;
+    font-weight: 800;
+  }
+  .api-bridge .gloss {
+    font-size: 14px;
+    color: #5a4030;
+    line-height: 1.45;
+    font-weight: 600;
+    max-width: 280px;
+  }
+
+  /* ===== Tab 3: Output comparison ===== */
+  .array-label {
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 15px;
+    font-weight: 700;
+    color: #5a4030;
+    margin: 4px 0 8px;
+  }
+  .array-label.end { margin: 8px 0 0; }
+  .array-label .bracket { color: #98886e; font-weight: 700; }
+
+  .block-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .content-block {
+    background: #fff;
+    border: 2px solid;
+    border-radius: 12px;
+    padding: 12px 14px;
+    position: relative;
+  }
+  .content-block.bk-text { border-color: #cfe0f0; }
+  .content-block.bk-thinking { border-color: #ffd9b3; box-shadow: 0 4px 14px rgba(199,90,31,0.18); }
+
+  .bk-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .bk-name {
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    padding: 3px 12px;
+    border-radius: 7px;
+    color: #fff;
+    background: #2c5d8c;
+  }
+  .bk-name.thinking { background: #c75a1f; }
+  .bk-tag {
+    background: #1a1a1a;
+    color: #ffb070;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 14px;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 999px;
+    letter-spacing: 0.3px;
+  }
+
+  .json-block {
+    background: #fbf4ea;
+    color: #1a1a1a;
+    border: 1.5px solid #f1e3d0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 14px;
+    line-height: 1.65;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .json-block .k { color: #c75a1f; font-weight: 700; }
+  .json-block .v { color: #2c5d8c; }
+  .json-block .s { color: #98886e; }
+  .json-block .ph { color: #b8a890; font-style: italic; }
+
+  .result-note {
+    margin-top: auto;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.4;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #fff;
+    border: 1.5px dashed;
+    text-align: center;
+  }
+  .result-note.cool { color: #2c5d8c; border-color: #cfe0f0; }
+  .result-note.warm { color: #c75a1f; border-color: #ffd9b3; }
+
+  .channels-bottom {
+    margin-top: 22px;
+    text-align: center;
+    font-size: 16px;
+    color: #6b5a48;
+    font-weight: 600;
+    padding: 14px 20px;
+    background: #fbf4ea;
+    border: 1.5px solid #f1e3d0;
+    border-radius: 12px;
+    line-height: 1.5;
+  }
+  .channels-bottom code {
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    background: rgba(199, 90, 31, 0.12);
+    padding: 1px 8px;
+    border-radius: 5px;
+    color: #c75a1f;
+    font-weight: 700;
+    font-size: 14px;
+  }
+  .channels-bottom .accent { color: #c75a1f; font-weight: 800; }
+  .channels-bottom .footnote {
+    display: block;
+    margin-top: 6px;
+    font-size: 14px;
+    color: #98886e;
+    font-weight: 500;
+  }
+
+</style>
+</head>
+<body>
+  <div class="stage">
+
+    <!-- Tabs (small toggle in top-right corner) -->
+    <div class="tabs">
+      <button class="tab active" data-tab="runtime">运行时架构</button>
+      <button class="tab" data-tab="channels">输出对比</button>
+      <button class="tab" data-tab="training">训练 + 协议</button>
+      <button class="tab" data-tab="train-data">训练数据</button>
+    </div>
+
+    <!-- ===== Tab 1: Runtime architecture ===== -->
+    <div class="tab-content active" data-tab="runtime">
+
+      <div class="quote">
+        <span class="term">Thinking</span>模式 = 让模型先写一段<span class="pos">「给自己看的草稿」</span>，再出最终答案
+      </div>
+
+      <div class="split">
+
+        <!-- 普通模式 -->
+        <div class="col">
+          <div class="col-header cool">
+            <span class="mode-name cool">普通模式</span>
+            <span class="mode-sep">·</span>
+            <span class="mode-sub cool">直接预测下一步</span>
+          </div>
+          <div class="panel cool">
+            <div class="vflow">
+              <div class="box">
+                <div class="box-title">Context（上下文）</div>
+                <ul class="ctx-grid">
+                  <li>system prompt</li>
+                  <li>CLAUDE.md</li>
+                  <li>工具说明</li>
+                  <li>你的问题</li>
+                  <li>项目文件片段</li>
+                  <li>历史消息</li>
+                  <li>上次工具返回</li>
+                </ul>
+              </div>
+              <div class="varrow cool">↓</div>
+              <div class="box transformer">
+                <div class="box-title">Transformer</div>
+                <div class="box-sub">模型计算</div>
+              </div>
+              <div class="varrow cool" aria-hidden="true" style="visibility:hidden;">↓</div>
+              <div class="box thinking-tokens" aria-hidden="true" style="visibility:hidden;">
+                <div class="box-title">Thinking Tokens</div>
+                <div class="box-sub">先写一段中间推理</div>
+                <div class="tt-tags">
+                  <span class="tt-tag">假设</span>
+                  <span class="tt-tag">排除</span>
+                  <span class="tt-tag">定位</span>
+                </div>
+              </div>
+              <div class="varrow cool">↓</div>
+              <div class="box">
+                <div class="box-title">Action</div>
+                <div class="tt-tags" style="margin-top: 4px;">
+                  <span class="tt-tag" style="background:#1a1a1a; color:#fff;">text</span>
+                  <span class="tt-tag" style="background:#1a1a1a; color:#fff;">tool_use</span>
+                </div>
+                <div class="action-pills" style="margin-top:6px;">
+                  <span class="action-pill">回话</span>
+                  <span class="action-pill">调工具</span>
+                  <span class="action-pill">改文件</span>
+                  <span class="action-pill">跑命令</span>
+                </div>
+              </div>
+            </div>
+            <div class="panel-note">输入到行动，中间没东西</div>
+          </div>
+        </div>
+
+        <!-- Thinking 模式 -->
+        <div class="col">
+          <div class="col-header warm">
+            <span class="mode-name warm">Thinking 模式</span>
+            <span class="mode-sep">·</span>
+            <span class="mode-sub warm">先写中间推理，再出动作</span>
+          </div>
+          <div class="panel warm">
+            <div class="vflow">
+              <div class="box">
+                <div class="box-title">Context（上下文）</div>
+                <ul class="ctx-grid">
+                  <li>system prompt</li>
+                  <li>CLAUDE.md</li>
+                  <li>工具说明</li>
+                  <li>你的问题</li>
+                  <li>项目文件片段</li>
+                  <li>历史消息</li>
+                  <li>上次工具返回</li>
+                </ul>
+              </div>
+              <div class="varrow warm">↓</div>
+              <div class="box transformer">
+                <div class="box-title">Transformer</div>
+                <div class="box-sub">模型计算</div>
+              </div>
+              <div class="varrow warm">↓</div>
+              <div class="box thinking-tokens">
+                <div class="box-title">Thinking Tokens</div>
+                <div class="box-sub">先写一段中间推理</div>
+                <div class="tt-tags">
+                  <span class="tt-tag">假设</span>
+                  <span class="tt-tag">排除</span>
+                  <span class="tt-tag">定位</span>
+                </div>
+              </div>
+              <div class="varrow warm">↓</div>
+              <div class="box">
+                <div class="box-title">Action</div>
+                <div class="tt-tags" style="margin-top: 4px;">
+                  <span class="tt-tag" style="background:#1a1a1a; color:#fff;">text</span>
+                  <span class="tt-tag" style="background:#1a1a1a; color:#fff;">tool_use</span>
+                </div>
+                <div class="action-pills" style="margin-top:6px;">
+                  <span class="action-pill">回话</span>
+                  <span class="action-pill">调工具</span>
+                  <span class="action-pill">改文件</span>
+                  <span class="action-pill">跑命令</span>
+                </div>
+              </div>
+            </div>
+            <div class="loop-back">
+              <span class="loop-arrow">↻</span>
+              <span class="loop-label">Thinking Tokens 进入当前生成序列，<code>Action</code> 生成时也读回它当上下文</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="footer-formulas">
+        <div class="footer-formulas-inner">
+          <div class="formula-row-runtime">
+            <span class="formula-label cool">普通模式</span>
+            <span class="formula-sep">·</span>
+            <span class="formula">Context <span class="arr">→</span> Action</span>
+          </div>
+          <div class="formula-row-runtime">
+            <span class="formula-label warm">Thinking 模式</span>
+            <span class="formula-sep">·</span>
+            <span class="formula">Context <span class="arr">→</span> <span class="reasoning">Reasoning</span> <span class="arr">→</span> Action</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===== Tab 2: Training pipeline + API protocol ===== -->
+    <div class="tab-content" data-tab="training">
+
+      <div class="quote">
+        <span class="term">Thinking</span>不是外挂的算法，是模型在<span class="pos">训练里多学的一步</span>
+      </div>
+
+      <div class="split">
+
+        <!-- 普通模型 -->
+        <div class="col">
+          <div class="col-header cool">
+            <span class="mode-name cool">普通模型</span>
+            <span class="mode-sep">·</span>
+            <span class="mode-sub cool">只学"看到问题就回答"</span>
+          </div>
+          <div class="panel cool">
+            <div class="pipeline-label">训练流水线</div>
+            <div class="vflow">
+              <div class="stage-box">
+                <span class="stage-name">Pretraining</span>
+                <span class="stage-cn">预训练</span>
+                <span class="stage-sub">看海量文本</span>
+              </div>
+              <div class="varrow cool">↓</div>
+              <div class="stage-box">
+                <span class="stage-name">Instruction Tuning</span>
+                <span class="stage-cn">指令微调</span>
+                <span class="stage-sub">学会跟着指令答</span>
+              </div>
+              <div class="varrow cool">↓</div>
+              <div class="stage-box">
+                <span class="stage-name">RLHF</span>
+                <span class="stage-cn">人类反馈强化</span>
+                <span class="stage-sub">学会答得更顺</span>
+              </div>
+              <div class="varrow cool" aria-hidden="true" style="visibility:hidden;">↓</div>
+              <div class="stage-box highlight" aria-hidden="true" style="visibility:hidden;">
+                <span class="star">多这一步</span>
+                <span class="stage-name">Reasoning Tuning</span>
+                <span class="stage-cn">推理后训练</span>
+                <span class="stage-sub">学会先写一段思考再答</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reasoning 模型 -->
+        <div class="col">
+          <div class="col-header warm">
+            <span class="mode-name warm">Reasoning 模型</span>
+            <span class="mode-sep">·</span>
+            <span class="mode-sub warm">多学一步"先想再答"</span>
+          </div>
+          <div class="panel warm">
+            <div class="pipeline-label">训练流水线</div>
+            <div class="vflow">
+              <div class="stage-box">
+                <span class="stage-name">Pretraining</span>
+                <span class="stage-cn">预训练</span>
+                <span class="stage-sub">看海量文本</span>
+              </div>
+              <div class="varrow warm">↓</div>
+              <div class="stage-box">
+                <span class="stage-name">Instruction Tuning</span>
+                <span class="stage-cn">指令微调</span>
+                <span class="stage-sub">学会跟着指令答</span>
+              </div>
+              <div class="varrow warm">↓</div>
+              <div class="stage-box">
+                <span class="stage-name">RLHF</span>
+                <span class="stage-cn">人类反馈强化</span>
+                <span class="stage-sub">学会答得更顺</span>
+              </div>
+              <div class="varrow warm">↓</div>
+              <div class="stage-box highlight">
+                <span class="star">多这一步</span>
+                <span class="stage-name">Reasoning Tuning</span>
+                <span class="stage-cn">推理后训练</span>
+                <span class="stage-sub">学会先写一段思考再答</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="api-bridge">
+        <div class="label">
+          调用时还得开启
+          <span class="small">没这个字段，模型想推理也没地方写</span>
+        </div>
+        <div class="field-pill">
+          <span class="key">"thinking"</span>: { type: <span class="key">"adaptive"</span> }
+        </div>
+        <span class="arrow">→</span>
+        <div class="gloss">允许在 content 数组里输出 Thinking 块</div>
+      </div>
+
+    </div>
+
+    <!-- ===== Tab 3: Output comparison — 普通模型 vs Reasoning 模型 ===== -->
+    <div class="tab-content" data-tab="channels">
+
+      <div class="quote">
+        Thinking 模式的输出，<span class="pos">content 数组里多一个 block</span>
+      </div>
+
+      <div class="split">
+
+        <!-- 普通模式 -->
+        <div class="col">
+          <div class="col-header cool">
+            <span class="mode-name cool">普通模式</span>
+            <span class="mode-sep">·</span>
+            <span class="mode-sub cool">content 只有一个 block</span>
+          </div>
+          <div class="panel cool">
+            <div class="array-label">response.content<span class="bracket"> = [</span></div>
+            <div class="block-stack">
+              <div class="content-block bk-text">
+                <div class="bk-head">
+                  <span class="bk-name">text</span>
+                </div>
+<div class="json-block"><span class="s">{</span>
+  <span class="k">"type"</span><span class="s">:</span> <span class="v">"text"</span><span class="s">,</span>
+  <span class="k">"text"</span><span class="s">:</span> <span class="ph">"答案..."</span>
+<span class="s">}</span></div>
+              </div>
+            </div>
+            <div class="array-label end"><span class="bracket">]</span></div>
+            <div class="result-note cool">看到问题，直接给答案</div>
+          </div>
+        </div>
+
+        <!-- Thinking 模式 -->
+        <div class="col">
+          <div class="col-header warm">
+            <span class="mode-name warm">Thinking 模式</span>
+            <span class="mode-sep">·</span>
+            <span class="mode-sub warm">content 多一个 block</span>
+          </div>
+          <div class="panel warm">
+            <div class="array-label">response.content<span class="bracket"> = [</span></div>
+            <div class="block-stack">
+              <div class="content-block bk-thinking">
+                <div class="bk-head">
+                  <span class="bk-name thinking">thinking</span>
+                  <span class="bk-tag">+1 多出来的</span>
+                </div>
+<div class="json-block"><span class="s">{</span>
+  <span class="k">"type"</span><span class="s">:</span> <span class="v">"thinking"</span><span class="s">,</span>
+  <span class="k">"thinking"</span><span class="s">:</span> <span class="ph">"推理草稿..."</span>
+<span class="s">}</span></div>
+              </div>
+              <div class="content-block bk-text">
+                <div class="bk-head">
+                  <span class="bk-name">text</span>
+                </div>
+<div class="json-block"><span class="s">{</span>
+  <span class="k">"type"</span><span class="s">:</span> <span class="v">"text"</span><span class="s">,</span>
+  <span class="k">"text"</span><span class="s">:</span> <span class="ph">"答案..."</span>
+<span class="s">}</span></div>
+              </div>
+            </div>
+            <div class="array-label end"><span class="bracket">]</span></div>
+            <div class="result-note warm">先写一段推理，再给答案</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="channels-bottom">
+        同一套 next-token 生成机制——区别<span class="accent">只在</span>多写了一个 type 是 <code>thinking</code> 的 block
+        <span class="footnote">（同样的机制还能输出 <code>tool_use</code> block，让外部应用跑工具，再把结果包成 <code>tool_result</code> 传回去）</span>
+      </div>
+
+    </div>
+
+    <!-- ===== Tab 4: Reasoning Tuning training data zoom-in ===== -->
+    <div class="tab-content" data-tab="train-data">
+
+      <div class="quote">
+        <span class="term">Reasoning Tuning</span>喂的样本——多了一段<span class="pos">&lt;reasoning&gt;</span>标签
+      </div>
+
+      <div class="train-data-row">
+
+        <div class="td-card td-cool">
+          <div class="td-head">普通指令微调样本</div>
+<pre class="td-snippet"><span class="td-q">Q:</span> 解方程 2(x - 3) = 14
+<span class="td-a">A:</span> x = 10</pre>
+        </div>
+
+        <div class="td-card td-warm">
+          <div class="td-head">推理后训练样本</div>
+<pre class="td-snippet"><span class="td-q">Q:</span> 解方程 2(x - 3) = 14
+<span class="td-tag-r">&lt;reasoning&gt;</span>
+<span class="td-reasoning-body">  Step 1: 展开括号
+          2x - 6 = 14
+  Step 2: 两边加 6
+          2x = 20
+  Step 3: 两边除 2
+          x = 10</span>
+<span class="td-tag-r">&lt;/reasoning&gt;</span>
+<span class="td-tag-a">&lt;answer&gt;</span> x = 10 <span class="td-tag-a">&lt;/answer&gt;</span></pre>
+        </div>
+
+      </div>
+
+      <div class="train-data-bottom">
+        反复看上万条这种<span class="accent">step-by-step</span>样本——模型把"先把推理写出来再答"内化成<span class="accent">输出习惯</span>
+      </div>
+
+    </div>
+
+  </div>
+
+<script>
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.tab;
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === target));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.dataset.tab === target));
+    });
+  });
+</script>
+</body>
+</html>

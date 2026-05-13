@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prompt Cache 工作原理</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Helvetica Neue", sans-serif;
+    background: #0f0f0f;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 48px 32px;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: #fff;
+  }
+  .subtitle {
+    font-size: 15px;
+    color: #888;
+    margin-bottom: 48px;
+  }
+
+  /* --- Prefix structure diagram --- */
+  .section-label {
+    font-size: 13px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+    width: 900px;
+    text-align: left;
+  }
+
+  .prefix-bar-wrap {
+    width: 900px;
+    margin-bottom: 8px;
+  }
+  .prefix-bar {
+    display: flex;
+    height: 56px;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+  }
+  .seg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 500;
+    color: #fff;
+    position: relative;
+    transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .seg .inner {
+    padding: 0 8px;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    line-height: 1.2;
+  }
+  .seg .token-count {
+    font-size: 11px;
+    opacity: 0.7;
+    margin-top: 1px;
+  }
+
+  /* breakpoint marker */
+  .bp {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #fff;
+    opacity: 0.6;
+    z-index: 5;
+  }
+  .bp::after {
+    content: 'cache_control';
+    position: absolute;
+    bottom: -20px;
+    right: -30px;
+    font-size: 10px;
+    color: #888;
+    white-space: nowrap;
+  }
+
+  /* segment colors */
+  .seg-tools        { background: #2d4a3e; }
+  .seg-system       { background: #3a3d5c; }
+  .seg-inject       { background: #4a3a2e; }
+  .seg-input        { background: #1a3a5c; }
+  .seg-history-asst { background: #3a2d4a; }
+  .seg-history-user { background: #4a3a2e; }
+
+  /* cache overlay colors */
+  .cache-creation { background: #d97706 !important; }
+  .cache-read     { background: #059669 !important; }
+  .cache-input    { background: #2563eb !important; }
+
+  /* --- Legend --- */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 24px;
+    margin: 16px 0 40px;
+    width: 900px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #aaa;
+  }
+  .legend-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+  }
+
+  /* --- Turn buttons --- */
+  .turns {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .turn-btn {
+    padding: 12px 28px;
+    border: 2px solid #333;
+    border-radius: 10px;
+    background: transparent;
+    color: #aaa;
+    font-size: 15px;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+  .turn-btn:hover {
+    border-color: #555;
+    color: #fff;
+  }
+  .turn-btn.active {
+    border-color: #059669;
+    color: #fff;
+    background: rgba(5, 150, 105, 0.1);
+  }
+
+  /* --- Formula --- */
+  .formula-wrap {
+    width: 900px;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 20px 28px;
+    font-size: 15px;
+    color: #aaa;
+    line-height: 1.8;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+  .formula-wrap.visible { opacity: 1; }
+  .formula-wrap .highlight {
+    color: #fff;
+    font-weight: 600;
+  }
+  .formula-wrap .green { color: #059669; }
+  .formula-wrap .orange { color: #d97706; }
+  .formula-wrap .blue { color: #2563eb; }
+
+  /* --- Prefix structure labels --- */
+  .prefix-labels {
+    display: flex;
+    width: 900px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+  }
+  .prefix-label {
+    font-size: 11px;
+    color: #555;
+    text-align: center;
+    transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* --- Three-turn comparison --- */
+  .compare-wrap {
+    width: 900px;
+  }
+  .compare-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  .compare-table th, .compare-table td {
+    padding: 14px 20px;
+    text-align: center;
+    border-bottom: 1px solid #2a2a2a;
+    font-family: "SF Mono", Menlo, monospace;
+  }
+  .compare-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .compare-table th {
+    background: #222;
+    color: #ddd;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .compare-table td.metric {
+    text-align: left;
+    color: #888;
+    font-size: 13px;
+  }
+  .compare-table td {
+    color: #e0e0e0;
+    font-size: 16px;
+  }
+  .compare-table td.c-green  { color: #10b981; font-weight: 600; }
+  .compare-table td.c-orange { color: #f59e0b; font-weight: 600; }
+  .compare-table td.c-blue   { color: #3b82f6; font-weight: 600; }
+
+  .formula-box {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 24px 28px;
+    text-align: center;
+  }
+  .formula-title {
+    font-size: 12px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 14px;
+  }
+  .formula-expr {
+    font-size: 18px;
+    color: #fff;
+    font-family: "SF Mono", Menlo, monospace;
+    margin-bottom: 14px;
+  }
+  .formula-example {
+    font-size: 14px;
+    color: #aaa;
+    font-family: "SF Mono", Menlo, monospace;
+    line-height: 1.9;
+  }
+  .formula-example .c-green  { color: #10b981; font-weight: 600; }
+  .formula-example .c-orange { color: #f59e0b; font-weight: 600; }
+
+  /* --- Cost view --- */
+  .cost-wrap {
+    width: 900px;
+  }
+  .rates {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 32px;
+  }
+  .rate-card {
+    flex: 1;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 18px 16px;
+    text-align: center;
+  }
+  .rate-card.highlight {
+    border-color: #10b981;
+    background: rgba(16, 185, 129, 0.08);
+  }
+  .rate-label {
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 10px;
+  }
+  .rate-card.highlight .rate-label {
+    color: #10b981;
+  }
+  .rate-value {
+    font-size: 28px;
+    color: #fff;
+    font-family: "SF Mono", Menlo, monospace;
+    font-weight: 600;
+  }
+  .rate-card.highlight .rate-value {
+    color: #10b981;
+  }
+
+  .cost-section-label {
+    font-size: 13px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 14px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Prompt Cache 工作原理</h1>
+<div class="subtitle">tools → system → messages &nbsp;|&nbsp; 三轮对话的缓存演变</div>
+
+<div class="turns">
+  <button class="turn-btn active" onclick="showView('structure')">前缀结构</button>
+  <button class="turn-btn" onclick="showView('turn1')">消息 1：冷启动</button>
+  <button class="turn-btn" onclick="showView('turn2')">消息 2：缓存命中</button>
+  <button class="turn-btn" onclick="showView('turn3')">消息 3：滚雪球</button>
+  <button class="turn-btn" onclick="showView('compare')">三轮对比</button>
+  <button class="turn-btn" onclick="showView('cost')">成本影响</button>
+</div>
+
+<div class="section-label" id="view-label">请求前缀结构</div>
+
+<div class="prefix-bar-wrap">
+  <div class="prefix-bar" id="bar"></div>
+</div>
+<div class="prefix-labels" id="labels"></div>
+
+<div class="legend" id="leg-struct-wrap">
+  <div class="legend-item" id="leg-struct">
+    <div class="legend-dot" style="background:#2d4a3e"></div> tools
+    <div class="legend-dot" style="background:#3a3d5c; margin-left:8px"></div> system
+    <div class="legend-dot" style="background:#4a3a2e; margin-left:8px"></div> 用户注入上下文
+    <div class="legend-dot" style="background:#1a3a5c; margin-left:8px"></div> 用户输入
+    <div class="legend-dot" style="background:#3a2d4a; margin-left:8px"></div> assistant 回复
+  </div>
+</div>
+
+<div class="section-label" id="cache-label" style="display:none">Token 分布</div>
+<div class="prefix-bar-wrap" id="cache-wrap" style="display:none">
+  <div class="prefix-bar" id="cache-bar"></div>
+</div>
+
+<div class="formula-wrap" id="formula"></div>
+
+<div class="compare-wrap" id="compare-wrap" style="display:none">
+  <table class="compare-table">
+    <thead>
+      <tr>
+        <th></th>
+        <th>消息 1（冷启动）</th>
+        <th>消息 2（缓存命中）</th>
+        <th>消息 3（滚雪球）</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="metric">cache_creation</td>
+        <td class="c-orange">48,654</td>
+        <td class="c-orange">24</td>
+        <td class="c-orange">29</td>
+      </tr>
+      <tr>
+        <td class="metric">cache_read</td>
+        <td class="c-green">0</td>
+        <td class="c-green">48,654</td>
+        <td class="c-green">48,678</td>
+      </tr>
+      <tr>
+        <td class="metric">input_tokens</td>
+        <td class="c-blue">6</td>
+        <td class="c-blue">6</td>
+        <td class="c-blue">6</td>
+      </tr>
+      <tr>
+        <td class="metric">messages 数量</td>
+        <td>1</td>
+        <td>3</td>
+        <td>5</td>
+      </tr>
+      <tr>
+        <td class="metric">总上下文</td>
+        <td>48,660</td>
+        <td>48,684</td>
+        <td>48,713</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="formula-box">
+    <div class="formula-title">滚雪球公式</div>
+    <div class="formula-expr">
+      cache_read[N+1] = cache_read[N] + cache_creation[N]
+    </div>
+    <div class="formula-example">
+      消息 1 → 消息 2：<span class="c-green">0</span> + <span class="c-orange">48,654</span> = <span class="c-green">48,654</span><br>
+      消息 2 → 消息 3：<span class="c-green">48,654</span> + <span class="c-orange">24</span> = <span class="c-green">48,678</span>
+    </div>
+  </div>
+</div>
+
+<div class="cost-wrap" id="cost-wrap" style="display:none">
+  <div class="cost-section-label">价格倍率（相对普通 input）</div>
+  <div class="rates">
+    <div class="rate-card">
+      <div class="rate-label">普通 input</div>
+      <div class="rate-value">1×</div>
+    </div>
+    <div class="rate-card">
+      <div class="rate-label">5m cache 写入</div>
+      <div class="rate-value">1.25×</div>
+    </div>
+    <div class="rate-card">
+      <div class="rate-label">1h cache 写入</div>
+      <div class="rate-value">2×</div>
+    </div>
+    <div class="rate-card highlight">
+      <div class="rate-label">cache 读取</div>
+      <div class="rate-value">0.1×</div>
+    </div>
+  </div>
+
+  <div class="cost-section-label">三轮真实成本对比（按 1h 缓存折算，单位 = 1× 普通 input token）</div>
+  <table class="compare-table">
+    <thead>
+      <tr>
+        <th></th>
+        <th>消息 1（冷启动）</th>
+        <th>消息 2（缓存命中）</th>
+        <th>消息 3（缓存命中）</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="metric">cache_creation × 2</td>
+        <td class="c-orange">97,308</td>
+        <td class="c-orange">48</td>
+        <td class="c-orange">58</td>
+      </tr>
+      <tr>
+        <td class="metric">cache_read × 0.1</td>
+        <td class="c-green">0</td>
+        <td class="c-green">4,865</td>
+        <td class="c-green">4,868</td>
+      </tr>
+      <tr>
+        <td class="metric">input_tokens × 1</td>
+        <td class="c-blue">6</td>
+        <td class="c-blue">6</td>
+        <td class="c-blue">6</td>
+      </tr>
+      <tr>
+        <td class="metric"><strong>实际成本</strong></td>
+        <td><strong>97,314</strong></td>
+        <td><strong>4,919</strong></td>
+        <td><strong>4,932</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="formula-box" style="margin-top:24px">
+    <div class="formula-title">为什么对话越长越省</div>
+    <div class="formula-example" style="line-height:2">
+      第 1 轮：写入 2× → <span class="c-orange">看起来亏</span><br>
+      从第 2 轮起：读取 0.1× → <span class="c-green">每轮都省 90%</span><br>
+      cache_read 越滚越大，省的越多
+    </div>
+  </div>
+</div>
+
+<script>
+const bar = document.getElementById('bar');
+const labels = document.getElementById('labels');
+const formula = document.getElementById('formula');
+const viewLabel = document.getElementById('view-label');
+const cacheLabel = document.getElementById('cache-label');
+const cacheWrap = document.getElementById('cache-wrap');
+const cacheBar = document.getElementById('cache-bar');
+const compareWrap = document.getElementById('compare-wrap');
+const costWrap = document.getElementById('cost-wrap');
+const prefixBarWrap = bar.parentElement;
+const legStructWrap = document.getElementById('leg-struct-wrap');
+
+// Fixed pixel widths so common segments stay identical across turns
+// and later turns visibly extend further to the right.
+const W = {
+  tools: 240, system: 130, inject: 130,
+  userHello: 80, asst: 90, userFine: 60, userThanks: 80,
+};
+
+function buildStructure(turnKey) {
+  if (turnKey === 'turn1') {
+    return `
+      <div class="seg seg-tools" style="width:${W.tools}px">
+        <div class="inner">tools<span class="token-count">31个工具定义</span></div>
+        <div class="bp"></div>
+      </div>
+      <div class="seg seg-system" style="width:${W.system}px">
+        <div class="inner">system<span class="token-count">系统提示词</span></div>
+        <div class="bp"></div>
+      </div>
+      <div class="seg seg-inject" style="width:${W.inject}px">
+        <div class="inner">.../CLAUDE.md<span class="token-count">用户注入上下文</span></div>
+      </div>
+      <div class="seg seg-input" style="width:${W.userHello}px">
+        <div class="inner" style="font-size:10px">"hello"</div>
+        <div class="bp"></div>
+      </div>
+    `;
+  } else if (turnKey === 'turn2') {
+    return `
+      <div class="seg seg-tools" style="width:${W.tools}px">
+        <div class="inner">tools<span class="token-count">31个工具定义</span></div>
+        <div class="bp"></div>
+      </div>
+      <div class="seg seg-system" style="width:${W.system}px">
+        <div class="inner">system<span class="token-count">系统提示词</span></div>
+        <div class="bp"></div>
+      </div>
+      <div class="seg seg-inject" style="width:${W.inject}px">
+        <div class="inner">.../CLAUDE.md<span class="token-count">用户注入上下文</span></div>
+      </div>
+      <div class="seg seg-input" style="width:${W.userHello}px">
+        <div class="inner" style="font-size:10px">"hello"</div>
+      </div>
+      <div class="seg seg-history-asst" style="width:${W.asst}px">
+        <div class="inner" style="font-size:10px">asst 回复</div>
+      </div>
+      <div class="seg seg-input" style="width:${W.userFine}px">
+        <div class="inner" style="font-size:10px">"fine"</div>
+        <div class="bp"></div>
+      </div>
+    `;
+  } else if (turnKey === 'turn3') {
+    return `
+      <div class="seg seg-tools" style="width:${W.tools}px">
+        <div class="inner">tools<span class="token-count">31个工具定义</span></div>
+        <div class="bp"></div>
+      </div>
+      <div class="seg seg-system" style="width:${W.system}px">
+        <div class="inner">system<span class="token-count">系统提示词</span></div>
+        <div class="bp"></div>
+      </div>
+      <div class="seg seg-inject" style="width:${W.inject}px">
+        <div class="inner">.../CLAUDE.md<span class="token-count">用户注入上下文</span></div>
+      </div>
+      <div class="seg seg-input" style="width:${W.userHello}px">
+        <div class="inner" style="font-size:10px">"hello"</div>
+      </div>
+      <div class="seg seg-history-asst" style="width:${W.asst}px">
+        <div class="inner" style="font-size:10px">asst 回复</div>
+      </div>
+      <div class="seg seg-input" style="width:${W.userFine}px">
+        <div class="inner" style="font-size:10px">"fine"</div>
+      </div>
+      <div class="seg seg-history-asst" style="width:${W.asst}px">
+        <div class="inner" style="font-size:10px">asst 回复</div>
+      </div>
+      <div class="seg seg-input" style="width:${W.userThanks}px">
+        <div class="inner" style="font-size:10px">"thank you"</div>
+        <div class="bp"></div>
+      </div>
+    `;
+  }
+}
+
+const data = {
+  turn1: { creation: 48654, read: 0,     input: 6, total: 48660, msgs: 1 },
+  turn2: { creation: 24,    read: 48654,  input: 6, total: 48684, msgs: 3 },
+  turn3: { creation: 29,    read: 48678,  input: 6, total: 48713, msgs: 5 },
+};
+
+function setActive(view) {
+  document.querySelectorAll('.turn-btn').forEach((btn, i) => {
+    const views = ['structure','turn1','turn2','turn3','compare','cost'];
+    btn.classList.toggle('active', views[i] === view);
+  });
+}
+
+function showVisualSections(show) {
+  const display = show ? '' : 'none';
+  viewLabel.style.display = display;
+  prefixBarWrap.style.display = show ? '' : 'none';
+  labels.style.display = display;
+  legStructWrap.style.display = display;
+}
+
+function showStructure() {
+  showVisualSections(true);
+  compareWrap.style.display = 'none';
+  costWrap.style.display = 'none';
+  viewLabel.textContent = '请求前缀结构（按缓存计算顺序）';
+  formula.classList.remove('visible');
+  formula.style.display = '';
+  cacheLabel.style.display = 'none';
+  cacheWrap.style.display = 'none';
+  bar.style.width = '';  // reset to full wrapper width for percentage layout
+
+  // Readable proportions, not strict ratios
+  const toolsPct = 40;
+  const systemPct = 25;
+  const injectPct = 25;
+  const inputPct = 10;
+
+  bar.innerHTML = `
+    <div class="seg seg-tools" style="width:${toolsPct}%">
+      <div class="inner">tools<span class="token-count">31个工具定义</span></div>
+      <div class="bp"></div>
+    </div>
+    <div class="seg seg-system" style="width:${systemPct}%">
+      <div class="inner">system<span class="token-count">系统提示词</span></div>
+      <div class="bp"></div>
+    </div>
+    <div class="seg seg-inject" style="width:${injectPct}%">
+      <div class="inner">hook/MCP/skills/CLAUDE.md<span class="token-count">用户注入上下文</span></div>
+    </div>
+    <div class="seg seg-input" style="width:${inputPct}%">
+      <div class="inner" style="font-size:10px">hello</div>
+      <div class="bp"></div>
+    </div>
+  `;
+  labels.innerHTML = `
+    <div class="prefix-label" style="width:${toolsPct}%">← 前缀第一层 →</div>
+    <div class="prefix-label" style="width:${systemPct}%">← 第二层 →</div>
+    <div class="prefix-label" style="width:${injectPct + inputPct}%">← 第三层 →</div>
+  `;
+}
+
+function showTurn(turnKey) {
+  showVisualSections(true);
+  compareWrap.style.display = 'none';
+  costWrap.style.display = 'none';
+  formula.style.display = '';
+  const d = data[turnKey];
+
+  // Cache-bar widths in px. Same content (same tokens) keeps the same width
+  // across turns; later turns extend further to the right.
+  const READ_BASE = 740;   // represents the ~48k tokens of the first cached prefix
+  const NEW_CHUNK = 60;    // tiny per-turn additions (~24 / ~29 tokens)
+  const INPUT_W = 40;
+  let readPx, createPx;
+  if (turnKey === 'turn1') {
+    readPx = 0; createPx = READ_BASE;
+  } else if (turnKey === 'turn2') {
+    readPx = READ_BASE; createPx = NEW_CHUNK;
+  } else {
+    readPx = READ_BASE + NEW_CHUNK; createPx = NEW_CHUNK;
+  }
+
+  const turnNum = turnKey === 'turn1' ? 1 : turnKey === 'turn2' ? 2 : 3;
+  viewLabel.textContent = `消息 ${turnNum} 的请求前缀结构`;
+
+  // Top bar: prefix structure for this turn
+  bar.style.width = 'fit-content';
+  bar.innerHTML = buildStructure(turnKey);
+  labels.innerHTML = '';
+
+  // Bottom bar: token distribution
+  cacheLabel.style.display = 'block';
+  cacheLabel.textContent = `消息 ${turnNum} 的 Token 分布`;
+  cacheWrap.style.display = 'block';
+
+  // All cache-bar inners share the same font-size + identical HTML structure
+  // so the three blocks vertically center at the same baseline.
+  let readLabel = d.read > 0
+    ? `<div class="inner" style="font-size:11px">cache_read<span class="token-count">${d.read.toLocaleString()} tokens</span></div>`
+    : '';
+  let createLabel = `<div class="inner" style="font-size:11px">${d.creation > 1000 ? 'cache_creation' : 'create'}<span class="token-count">${d.creation.toLocaleString()}</span></div>`;
+  let inputLabel = `<div class="inner" style="font-size:11px">input<span class="token-count">${d.input}</span></div>`;
+
+  cacheBar.style.width = 'fit-content';
+  cacheBar.innerHTML = `${readPx > 0 ? `<div class="seg cache-read" style="width:${readPx}px">${readLabel}</div>` : ''}<div class="seg cache-creation" style="width:${createPx}px">${createLabel}</div><div class="seg cache-input" style="width:${INPUT_W}px">${inputLabel}</div>`;
+
+  // Formula
+  formula.classList.add('visible');
+  if (turnKey === 'turn1') {
+    formula.innerHTML = `
+      <strong>冷启动</strong>：之前没有缓存。<br>
+      工具定义 + 系统提示词 + 用户注入上下文 = <span class="orange highlight">48,654</span> tokens 全部写入缓存。<br>
+      <span class="blue highlight">6</span> tokens 就是你的 "hello"。<br>
+      <span class="green highlight">0</span> 缓存读取。
+    `;
+  } else if (turnKey === 'turn2') {
+    formula.innerHTML = `
+      <strong>缓存命中</strong>：上一轮写入的 48,654 tokens 全部复用。<br>
+      <span class="green highlight">cache_read = 48,654</span> = 上一轮的 cache_creation<br>
+      <span class="orange highlight">cache_creation = 24</span> = assistant回复 "Hi! What would you like to work on?" + "fine"<br>
+      成本：48,654 tokens 从 <span class="orange">2倍写入</span> → <span class="green">0.1倍读取</span>
+    `;
+  } else {
+    formula.innerHTML = `
+      <strong>滚雪球</strong>：缓存继续累积。<br>
+      <span class="green highlight">cache_read = 48,678</span> = 上一轮 cache_read(48,654) + cache_creation(24)<br>
+      <span class="orange highlight">cache_creation = 29</span> = 新增的 assistant回复 + "thank you"<br>
+      公式：<span class="highlight">每轮 cache_read = 上轮 cache_read + 上轮 cache_creation</span>
+    `;
+  }
+}
+
+function showCompare() {
+  showVisualSections(false);
+  cacheLabel.style.display = 'none';
+  cacheWrap.style.display = 'none';
+  formula.classList.remove('visible');
+  formula.style.display = 'none';
+  costWrap.style.display = 'none';
+  compareWrap.style.display = '';
+}
+
+function showCost() {
+  showVisualSections(false);
+  cacheLabel.style.display = 'none';
+  cacheWrap.style.display = 'none';
+  formula.classList.remove('visible');
+  formula.style.display = 'none';
+  compareWrap.style.display = 'none';
+  costWrap.style.display = '';
+}
+
+function showView(view) {
+  setActive(view);
+  if (view === 'structure') showStructure();
+  else if (view === 'compare') showCompare();
+  else if (view === 'cost') showCost();
+  else showTurn(view);
+}
+
+// Init
+showStructure();
+</script>
+</body>
+</html>

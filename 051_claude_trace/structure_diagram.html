@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Code API Request / Response Structure</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #faf9f5;
+    color: #141413;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 40px;
+    min-height: 100vh;
+  }
+
+  .container {
+    max-width: 1500px;
+    margin: 0 auto;
+  }
+
+  .title {
+    text-align: center;
+    margin-bottom: 36px;
+  }
+
+  .title h1 {
+    font-size: 22px;
+    font-weight: 600;
+    color: #141413;
+  }
+
+  .title .sub {
+    font-size: 13px;
+    color: #b0aea5;
+    margin-top: 6px;
+  }
+
+  .columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+
+  .panel {
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid #e8e6dc;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(20, 20, 19, 0.06);
+  }
+
+  .panel-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid #e8e6dc;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #faf9f5;
+  }
+
+  .panel-header.req { color: #c15f3c; }
+  .panel-header.res { color: #5a7340; }
+
+  .json-body {
+    padding: 16px 20px;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  /* JSON syntax — Anthropic/Claude palette, light theme */
+  .brace { color: #141413; }
+  .key { color: #c15f3c; }
+  .str { color: #141413; }
+  .num { color: #4a7ea8; }
+  .kw { color: #7a7870; } /* null, true, false */
+  .comment { color: #b0aea5; font-style: italic; }
+  .punct { color: #b0aea5; } /* colon, comma */
+
+  /* Indentation */
+  .l0 { margin-left: 0; }
+  .l1 { margin-left: 24px; }
+  .l2 { margin-left: 48px; }
+  .l3 { margin-left: 72px; }
+  .l4 { margin-left: 96px; }
+
+  .line {
+    display: flex;
+    align-items: baseline;
+    min-height: 26px;
+    border-radius: 3px;
+    padding: 0 4px;
+  }
+
+  .line:hover {
+    background: #f4f3ee;
+  }
+
+  .line .annotation {
+    margin-left: 12px;
+    font-size: 12px;
+    color: #b0aea5;
+    font-style: italic;
+    font-family: 'Inter', sans-serif;
+    white-space: nowrap;
+  }
+
+  .line .annotation.highlight {
+    color: #c15f3c;
+    font-style: normal;
+    font-weight: 500;
+    background: #c15f3c0c;
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  .line .size-tag {
+    margin-left: auto;
+    font-size: 11px;
+    color: #b0aea5;
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+    padding-left: 12px;
+  }
+
+  /* Collapsible hint */
+  .collapse-hint {
+    color: #b0aea5;
+    font-size: 12px;
+  }
+
+  .divider {
+    border: none;
+    border-top: 1px dashed #e8e6dc;
+    margin: 8px 0;
+  }
+
+  .footer {
+    text-align: center;
+    margin-top: 32px;
+    font-size: 11px;
+    color: #b0aea5;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="title">
+    <h1>一句 "hello" 背后的完整 API 结构</h1>
+    <div class="sub">POST https://api.anthropic.com/v1/messages &nbsp;&middot;&nbsp; claude-trace 抓取</div>
+  </div>
+
+  <div class="columns">
+
+    <!-- ==================== REQUEST ==================== -->
+    <div class="panel">
+      <div class="panel-header req">&#x2192; Request Body</div>
+      <div class="json-body">
+
+        <div class="line l0"><span class="brace">{</span></div>
+
+        <div class="line l1"><span class="key">"model"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8; font-weight:500;">"claude-opus-4-7"</span><span class="punct">,</span></div>
+
+        <!-- messages -->
+        <div class="line l1"><span class="key">"messages"</span><span class="punct">: </span><span class="brace">[{</span></div>
+        <div class="line l2"><span class="key">"role"</span><span class="punct">: </span><span class="str">"user"</span><span class="punct">,</span></div>
+        <div class="line l2"><span class="key">"content"</span><span class="punct">: [</span><span class="annotation">6 个 block，5 个是注入的上下文</span></div>
+
+        <div class="line l3"><span class="brace">{</span> <span class="key">"text"</span><span class="punct">: </span><span class="str">"&lt;system-reminder&gt; Hooks 配置..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+
+        <div class="line l3"><span class="brace">{</span> <span class="key">"text"</span><span class="punct">: </span><span class="str">"&lt;system-reminder&gt; Deferred Tools 清单..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+
+        <div class="line l3"><span class="brace">{</span> <span class="key">"text"</span><span class="punct">: </span><span class="str">"&lt;system-reminder&gt; MCP 服务器使用指南..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+
+        <div class="line l3"><span class="brace">{</span> <span class="key">"text"</span><span class="punct">: </span><span class="str">"&lt;system-reminder&gt; 可用 Skills 完整列表..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+
+        <div class="line l3"><span class="brace">{</span> <span class="key">"text"</span><span class="punct">: </span><span class="str">"&lt;system-reminder&gt; CLAUDE.md 项目指令..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+
+        <div class="line l3" style="background: #c15f3c08; border: 1px solid #c15f3c20; border-radius: 4px; padding: 2px 6px;">
+          <span class="brace">{</span>
+          <span class="key">"text"</span><span class="punct">: </span><span class="str" style="color:#c15f3c; font-weight:600;">"hello"</span><span class="punct">, </span>
+          <span class="key">"cache_control"</span><span class="punct">: {</span><span class="key">"ttl"</span><span class="punct">: </span><span class="str">"1h"</span><span class="punct">}</span>
+          <span class="brace">}</span>
+
+        </div>
+
+        <div class="line l2"><span class="punct">]</span></div>
+        <div class="line l1"><span class="brace">}]</span><span class="punct">,</span></div>
+
+        <hr class="divider">
+
+        <!-- system -->
+        <div class="line l1"><span class="key">"system"</span><span class="punct">: [</span><span class="annotation">4 块系统提示词</span></div>
+
+        <div class="line l2"><span class="brace">{</span> <span class="key">"text"</span><span class="punct">: </span><span class="str">"x-anthropic-billing-header: cc_version=2.1.112..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+
+        <div class="line l2"><span class="brace">{</span> <span class="key">"text"</span><span class="punct">: </span><span class="str">"You are Claude Code, Anthropic's official CLI..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+
+        <div class="line l2"><span class="brace">{</span> <span class="key">"text"</span><span class="punct">: </span><span class="str">"# System ... # Doing tasks ... # Executing ..."</span><span class="punct">,</span></div>
+        <div class="line l3"><span class="key">"cache_control"</span><span class="punct">: {</span><span class="key">"ttl"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8;">"1h"</span><span class="punct">, </span><span class="key">"scope"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8;">"global"</span><span class="punct">}</span> <span class="brace">}</span><span class="punct">,</span></div>
+
+        <div class="line l2"><span class="brace">{</span> <span class="key">"text"</span><span class="punct">: </span><span class="str">"# Text output ... # auto memory ... # Environment"</span> <span class="brace">}</span></div>
+
+        <div class="line l1"><span class="punct">],</span></div>
+
+        <hr class="divider">
+
+        <!-- tools -->
+        <div class="line l1"><span class="key">"tools"</span><span class="punct">: [</span><span class="annotation">10 个工具定义</span></div>
+        <div class="line l2"><span class="brace">{</span> <span class="key">"name"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8; font-weight:500;">"Agent"</span><span class="punct">, </span><span class="key">"description"</span><span class="punct">: </span><span class="str">"Launch a new agent to handle complex, multi-step tasks..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+        <div class="line l2"><span class="brace">{</span> <span class="key">"name"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8; font-weight:500;">"Bash"</span><span class="punct">,  </span><span class="key">"description"</span><span class="punct">: </span><span class="str">"Executes a given bash command and returns its output..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+        <div class="line l2"><span class="brace">{</span> <span class="key">"name"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8; font-weight:500;">"Edit"</span><span class="punct">,  </span><span class="key">"description"</span><span class="punct">: </span><span class="str">"Performs exact string replacements in files..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+        <div class="line l2"><span class="brace">{</span> <span class="key">"name"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8; font-weight:500;">"Glob"</span><span class="punct">,  </span><span class="key">"description"</span><span class="punct">: </span><span class="str">"Fast file pattern matching tool..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+        <div class="line l2"><span class="brace">{</span> <span class="key">"name"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8; font-weight:500;">"Grep"</span><span class="punct">,  </span><span class="key">"description"</span><span class="punct">: </span><span class="str">"A powerful search tool built on ripgrep..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+        <div class="line l2"><span class="brace">{</span> <span class="key">"name"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8; font-weight:500;">"Read"</span><span class="punct">,  </span><span class="key">"description"</span><span class="punct">: </span><span class="str">"Reads a file from the local filesystem..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+        <div class="line l2"><span class="brace">{</span> <span class="key">"name"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8; font-weight:500;">"Write"</span><span class="punct">, </span><span class="key">"description"</span><span class="punct">: </span><span class="str">"Writes a file to the local filesystem..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+        <div class="line l2"><span class="brace">{</span> <span class="key">"name"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8; font-weight:500;">"ScheduleWakeup"</span><span class="punct">, </span><span class="key">"description"</span><span class="punct">: </span><span class="str">"Schedule when to resume work..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+        <div class="line l2"><span class="brace">{</span> <span class="key">"name"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8; font-weight:500;">"Skill"</span><span class="punct">,  </span><span class="key">"description"</span><span class="punct">: </span><span class="str">"Execute a skill within the main conversation..."</span> <span class="brace">}</span><span class="punct">,</span></div>
+        <div class="line l2"><span class="brace">{</span> <span class="key">"name"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8; font-weight:500;">"ToolSearch"</span><span class="punct">, </span><span class="key">"description"</span><span class="punct">: </span><span class="str">"Fetches full schema for deferred tools..."</span> <span class="brace">}</span></div>
+        <div class="line l1"><span class="punct">],</span></div>
+
+        <hr class="divider">
+
+        <!-- other params -->
+        <div class="line l1"><span class="key">"max_tokens"</span><span class="punct">: </span><span class="num">64000</span><span class="punct">,</span></div>
+        <div class="line l1"><span class="key">"stream"</span><span class="punct">: </span><span class="kw">true</span><span class="punct">,</span></div>
+        <div class="line l1"><span class="key">"thinking"</span><span class="punct">: { </span><span class="key">"type"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8; font-weight:500;">"adaptive"</span><span class="punct"> },</span><span class="annotation">自动决定是否深度推理</span></div>
+        <div class="line l1"><span class="key">"output_config"</span><span class="punct">: { </span><span class="key">"effort"</span><span class="punct">: </span><span class="str" style="color:#c15f3c; font-weight:500;">"xhigh"</span><span class="punct"> }</span><span class="annotation">最高推理档位（默认）</span></div>
+
+        <div class="line l0"><span class="brace">}</span></div>
+      </div>
+    </div>
+
+    <!-- ==================== RESPONSE ==================== -->
+    <div class="panel">
+      <div class="panel-header res">&#x2190; Response &nbsp;<span style="color:#b0aea5; font-weight:400;">SSE text/event-stream</span></div>
+      <div class="json-body">
+
+        <!-- event: message_start -->
+        <div class="line l0" style="color:#b0aea5;">event: message_start</div>
+        <div class="line l0" style="color:#b0aea5;">data:</div>
+        <div class="line l0"><span class="brace">{</span></div>
+        <div class="line l1"><span class="key">"type"</span><span class="punct">: </span><span class="str">"message_start"</span><span class="punct">,</span></div>
+        <div class="line l1"><span class="key">"message"</span><span class="punct">: {</span></div>
+        <div class="line l2"><span class="key">"model"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8; font-weight:500;">"claude-opus-4-7"</span><span class="punct">,</span></div>
+        <div class="line l2"><span class="key">"usage"</span><span class="punct">: {</span></div>
+        <div class="line l3"><span class="key">"input_tokens"</span><span class="punct">: </span><span class="num">6</span><span class="punct">,</span><span class="annotation">你的 hello</span></div>
+        <div class="line l3"><span class="key">"cache_creation_input_tokens"</span><span class="punct">: </span><span class="num" style="color:#c15f3c; font-weight:600;">14,145</span><span class="punct">,</span><span class="annotation">新写入 1h 缓存</span></div>
+        <div class="line l3"><span class="key">"cache_read_input_tokens"</span><span class="punct">: </span><span class="num" style="color:#c15f3c; font-weight:600;">16,835</span><span class="punct">,</span><span class="annotation">复用已有缓存</span></div>
+        <div class="line l3"><span class="key">"output_tokens"</span><span class="punct">: </span><span class="num">4</span></div>
+        <div class="line l2"><span class="brace">}</span></div>
+        <div class="line l1"><span class="brace">}</span></div>
+        <div class="line l0"><span class="brace">}</span></div>
+
+        <hr class="divider">
+
+        <!-- content_block_start -->
+        <div class="line l0" style="color:#b0aea5;">event: content_block_start</div>
+        <div class="line l0"><span class="brace">{</span> <span class="key">"type"</span><span class="punct">: </span><span class="str">"content_block_start"</span><span class="punct">, </span><span class="key">"content_block"</span><span class="punct">: {</span><span class="key">"type"</span><span class="punct">: </span><span class="str">"text"</span><span class="punct">}</span> <span class="brace">}</span></div>
+
+        <hr class="divider">
+
+        <!-- ping -->
+        <div class="line l0" style="color:#b0aea5;">event: ping</div>
+        <div class="line l0"><span class="brace">{</span> <span class="key">"type"</span><span class="punct">: </span><span class="str">"ping"</span> <span class="brace">}</span><span class="annotation">心跳，保持连接</span></div>
+
+        <hr class="divider">
+
+        <!-- deltas -->
+        <div class="line l0" style="color:#b0aea5;">event: content_block_delta</div>
+        <div class="line l0"><span class="brace">{</span> <span class="key">"delta"</span><span class="punct">: {</span><span class="key">"type"</span><span class="punct">: </span><span class="str">"text_delta"</span><span class="punct">, </span><span class="key">"text"</span><span class="punct">: </span><span class="str" style="color:#c15f3c; font-weight:600;">"Hello!"</span><span class="punct">}</span> <span class="brace">}</span></div>
+
+        <hr class="divider">
+
+        <div class="line l0" style="color:#b0aea5;">event: content_block_delta</div>
+        <div class="line l0"><span class="brace">{</span> <span class="key">"delta"</span><span class="punct">: {</span><span class="key">"type"</span><span class="punct">: </span><span class="str">"text_delta"</span><span class="punct">, </span><span class="key">"text"</span><span class="punct">: </span><span class="str" style="color:#c15f3c; font-weight:600;">" How can I help you today?"</span><span class="punct">}</span> <span class="brace">}</span></div>
+
+        <hr class="divider">
+
+        <!-- content_block_stop -->
+        <div class="line l0" style="color:#b0aea5;">event: content_block_stop</div>
+        <div class="line l0"><span class="brace">{</span> <span class="key">"type"</span><span class="punct">: </span><span class="str">"content_block_stop"</span><span class="punct">, </span><span class="key">"index"</span><span class="punct">: </span><span class="num">0</span> <span class="brace">}</span></div>
+
+        <hr class="divider">
+
+        <!-- message_delta -->
+        <div class="line l0" style="color:#b0aea5;">event: message_delta</div>
+        <div class="line l0"><span class="brace">{</span></div>
+        <div class="line l1"><span class="key">"delta"</span><span class="punct">: { </span><span class="key">"stop_reason"</span><span class="punct">: </span><span class="str" style="color:#4a7ea8; font-weight:500;">"end_turn"</span><span class="punct"> },</span><span class="annotation">模型主动结束回复</span></div>
+        <div class="line l1"><span class="key">"usage"</span><span class="punct">: { </span><span class="key">"output_tokens"</span><span class="punct">: </span><span class="num">15</span><span class="punct"> }</span><span class="annotation">最终 output token 数</span></div>
+        <div class="line l0"><span class="brace">}</span></div>
+
+        <hr class="divider">
+
+        <!-- message_stop -->
+        <div class="line l0" style="color:#b0aea5;">event: message_stop</div>
+        <div class="line l0"><span class="brace">{</span> <span class="key">"type"</span><span class="punct">: </span><span class="str">"message_stop"</span> <span class="brace">}</span><span class="annotation">消息流结束</span></div>
+
+        <hr class="divider">
+
+        <!-- token summary -->
+        <div class="line l0" style="margin-top:8px; color:#b0aea5; font-family:'Inter',sans-serif; font-size:13px;">
+          实际上下文 = <span class="num">6</span> + <span class="num">14,145</span> + <span class="num">16,835</span> = <span style="color:#c15f3c; font-weight:600;">30,986 tokens</span>
+          <span style="color:#b0aea5; margin-left:8px;">缓存读取比正常输入便宜 90%</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    npx @mariozechner/claude-trace --include-all-requests &nbsp;&middot;&nbsp; Claude Code v2.1.112 &nbsp;&middot;&nbsp; 2026-04-22
+  </div>
+
+</div>
+</body>
+</html>

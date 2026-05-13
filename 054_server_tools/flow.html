@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>WebSearch 调用全流程</title>
+<style>
+  :root {
+    --bg: #0F1929;
+    --bg-2: #182441;
+    --text: #E8EDF5;
+    --muted: #8995A8;
+    --dim: #5C6678;
+    --client: #28C840;
+    --client-soft: rgba(40,200,64,0.08);
+    --client-line: rgba(40,200,64,0.40);
+    --server: #4A5878;
+    --server-soft: rgba(74,88,120,0.18);
+    --server-line: rgba(74,88,120,0.55);
+    --opus: #D97757;
+    --opus-soft: rgba(217,119,87,0.12);
+    --opus-line: rgba(217,119,87,0.55);
+    --haiku: #7591FF;
+    --haiku-soft: rgba(117,145,255,0.12);
+    --haiku-line: rgba(117,145,255,0.60);
+    --brave: #FF6B6B;
+    --brave-soft: rgba(255,107,107,0.10);
+    --brave-line: rgba(255,107,107,0.50);
+    --mono: 'SF Mono','JetBrains Mono','Menlo',monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  body {
+    color: var(--text);
+    font-family: 'Noto Sans SC', -apple-system, sans-serif;
+    position: relative;
+  }
+  .stage-wrap {
+    width: 1600px;
+    height: 900px;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 40px;
+    padding: 50px 70px 70px;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform-origin: center center;
+  }
+
+  /* === 顶部 === */
+  .head {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+  .head h1 {
+    font-size: 50px;
+    font-weight: 800;
+    letter-spacing: 1px;
+  }
+  .head h1 .o { color: var(--opus); }
+  .head h1 .h { color: var(--haiku); }
+
+  /* === 主图：CLIENT | 通信 | SERVER === */
+  .stage {
+    display: grid;
+    grid-template-columns: 170px 880px 220px;
+    justify-content: center;
+    gap: 40px;
+    align-items: center;
+    position: relative;
+  }
+
+  /* CLIENT 卡片（紧凑） */
+  .client-card {
+    border: 2px solid var(--client-line);
+    background: var(--client-soft);
+    border-radius: 14px;
+    padding: 18px 14px;
+    text-align: center;
+    height: 480px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+  }
+  .client-card .label {
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--client);
+    font-weight: 800;
+  }
+  .client-card .name {
+    font-size: 20px;
+    font-weight: 800;
+  }
+  .client-card .desc {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .client-card .role-stamp {
+    margin-top: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--client);
+    border: 1.5px solid var(--client-line);
+    padding: 3px 8px;
+    border-radius: 5px;
+  }
+
+  /* 中间：三条 round-trip 调用（主区域） */
+  .calls {
+    padding: 0 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .call {
+    border: 2px solid;
+    border-radius: 14px;
+    padding: 18px 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .call.to-opus { border-color: var(--opus-line); background: rgba(217,119,87,0.06); }
+  .call.to-haiku { border-color: var(--haiku-line); background: rgba(117,145,255,0.07); }
+  .call .num {
+    font-family: var(--mono);
+    font-size: 19px;
+    font-weight: 800;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .call.to-opus .num { color: var(--opus); }
+  .call.to-haiku .num { color: var(--haiku); }
+  .call .num .label {
+    color: var(--text);
+    font-weight: 700;
+    margin-left: 10px;
+    font-size: 18px;
+  }
+  .call .num .meta {
+    color: var(--dim);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1px;
+  }
+  .call .arrow-row {
+    display: block;
+    font-family: var(--mono);
+    font-size: 16px;
+  }
+  .call .arrow-row .body {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    position: relative;
+  }
+  .call .arrow-row .line {
+    width: 90px;
+    height: 3px;
+    border-radius: 1.5px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .call .arrow-row .payload {
+    color: var(--muted);
+    flex: 1;
+    line-height: 1.7;
+  }
+  .call .arrow-row .payload b { color: var(--text); font-weight: 700; }
+  .call .arrow-row .payload .field { color: var(--dim); font-size: 14px; }
+  .call .arrow-row .payload .pill {
+    background: rgba(255,255,255,0.06);
+    padding: 2px 9px;
+    border-radius: 5px;
+    margin: 0 2px;
+    font-size: 15px;
+  }
+  .call .arrow-row .payload .pill.opus { color: var(--opus); background: rgba(217,119,87,0.18); font-weight: 700; }
+  .call .arrow-row .payload .pill.haiku { color: var(--haiku); background: rgba(117,145,255,0.20); font-weight: 700; }
+  .call .arrow-row .payload .pill.danger { color: var(--brave); background: rgba(255,107,107,0.20); font-weight: 700; }
+  .call .arrow-row .payload .pill.green { color: var(--client); background: rgba(40,200,64,0.20); font-weight: 700; }
+  .call .arrow-row .payload .num-tools { color: var(--text); font-weight: 800; }
+  /* request line - colored */
+  .call.to-opus .req .line { background: var(--opus); }
+  .call.to-opus .req .line::after {
+    content: ""; position: absolute; right: -1px; top: -7px;
+    border: 8px solid transparent; border-left-color: var(--opus);
+  }
+  .call.to-haiku .req .line { background: var(--haiku); }
+  .call.to-haiku .req .line::after {
+    content: ""; position: absolute; right: -1px; top: -7px;
+    border: 8px solid transparent; border-left-color: var(--haiku);
+  }
+  /* response line - white return */
+  .call .resp .line { background: rgba(255,255,255,0.22); }
+  .call .resp .line::after {
+    content: ""; position: absolute; left: -1px; top: -7px;
+    border: 8px solid transparent; border-right-color: rgba(255,255,255,0.4);
+  }
+
+  /* SERVER 区域：Brave 主角 */
+  .server-card {
+    border: 2px dashed var(--server-line);
+    background: var(--server-soft);
+    border-radius: 14px;
+    padding: 18px 14px;
+    height: 480px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 12px;
+    position: relative;
+  }
+  .server-card .server-label {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    font-weight: 800;
+    padding: 2px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--server-line);
+    white-space: nowrap;
+  }
+  .server-card .hint {
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--dim);
+    line-height: 1.6;
+  }
+  .server-card .hint .em { color: var(--haiku); font-weight: 700; }
+  .server-card .down-arrow {
+    text-align: center;
+    color: var(--brave);
+    font-size: 28px;
+    line-height: 0.6;
+    margin: -2px 0;
+  }
+  .brave-hero {
+    border: 2.5px solid var(--brave);
+    background: var(--brave-soft);
+    border-radius: 14px;
+    padding: 22px 14px;
+    text-align: center;
+    box-shadow: 0 0 0 4px rgba(255,107,107,0.12), 0 0 30px rgba(255,107,107,0.18);
+  }
+  .brave-hero .name {
+    color: var(--brave);
+    font-size: 32px;
+    font-weight: 900;
+    letter-spacing: 1px;
+  }
+  .brave-hero .tag {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+  .brave-hero .tag b { color: var(--text); font-weight: 700; }
+  .brave-hero .badge {
+    display: inline-block;
+    margin-top: 10px;
+    background: rgba(255,107,107,0.18);
+    color: var(--brave);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  /* === 标题下方 subtitle === */
+  .takeaway {
+    margin-top: 14px;
+    text-align: center;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .takeaway .o { color: var(--opus); font-weight: 800; }
+  .takeaway .h { color: var(--haiku); font-weight: 800; }
+  .takeaway .em { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="stage-wrap" id="stage">
+
+  <div class="head">
+    <h1>WebSearch工具调用 = <span class="o">3 次 API</span> · <span class="h">2 个模型</span></h1>
+  </div>
+
+  <div class="stage">
+
+    <!-- 客户端 -->
+    <div class="client-card">
+      <div class="label">CLIENT</div>
+      <div class="name">Claude Code</div>
+    </div>
+
+    <!-- 中间：3 次 API 调用（核心） -->
+    <div class="calls">
+
+      <div class="call to-opus">
+        <div class="num">
+          <span>① 第 1 次 <span class="pill opus">Opus</span> 请求 <span class="label">· 决定要搜</span></span>
+        </div>
+        <div class="arrow-row req">
+          <div class="body">
+            <div class="line"></div>
+            <div class="payload">
+              <span class="field">msgs:</span> [user <b>"London 天气"</b>]
+              <span class="field">　tools:</span> <span class="num-tools">28 个</span>
+            </div>
+          </div>
+        </div>
+        <div class="arrow-row resp">
+          <div class="body">
+            <div class="line"></div>
+            <div class="payload">
+              <span class="field">输出:</span> <span class="pill opus">tool_use</span> { name: <b>WebSearch</b>, query: "London weather" }
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="call to-haiku">
+        <div class="num">
+          <span>② 第 2 次 <span class="pill haiku">Haiku</span> 请求 <span class="label">· 真去搜</span></span>
+        </div>
+        <div class="arrow-row req">
+          <div class="body">
+            <div class="line"></div>
+            <div class="payload">
+              <span class="field">msgs:</span> [user "Perform a web search..."]
+              <span class="field">　tools:</span> <span class="num-tools">1 个</span> · 仅 <span class="pill haiku">web_search</span>
+            </div>
+          </div>
+        </div>
+        <div class="arrow-row resp">
+          <div class="body">
+            <div class="line"></div>
+            <div class="payload">
+              <span class="field">输出 blocks:</span>
+              <span class="pill">web_search_tool_result</span> 10条搜索结果 + <span class="pill danger">30 KB 密文</span>
+              + 总结
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="call to-opus">
+        <div class="num">
+          <span>③ 第 3 次 <span class="pill opus">Opus</span> 请求 <span class="label">· 拿结果回话</span></span>
+        </div>
+        <div class="arrow-row req">
+          <div class="body">
+            <div class="line"></div>
+            <div class="payload">
+              <span class="field">msgs:</span> + tool_result：<b>10 条 url+title + Haiku 总结</b> <span style="color:var(--client)">（密文已剔除）</span>
+            </div>
+          </div>
+        </div>
+        <div class="arrow-row resp">
+          <div class="body">
+            <div class="line"></div>
+            <div class="payload">
+              <span class="field">输出:</span> <span class="pill green">text</span> "伦敦 15° 多云，傍晚有小雨..."（最终回答用户）
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 服务端：Brave 主角 -->
+    <div class="server-card">
+      <div class="server-label">SERVER · api.anthropic.com</div>
+
+      <div class="hint">Server</div>
+      <div class="brave-hero">
+        <div class="name">Brave</div>
+        <div class="tag">真正的搜索引擎</div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+<script>
+  function fit() {
+    const el = document.getElementById('stage');
+    const sx = window.innerWidth / 1600;
+    const sy = window.innerHeight / 900;
+    const s = Math.min(sx, sy);
+    el.style.transform = 'translate(-50%, -50%) scale(' + s + ')';
+  }
+  window.addEventListener('resize', fit);
+  fit();
+</script>
+</body>
+</html>

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Tool Use 契约图</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    background: #fdf6ec;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 60px 40px;
+    color: #1a1a1a;
+  }
+  .stage {
+    width: 1280px;
+    background: #ffffff;
+    border-radius: 28px;
+    padding: 80px 90px 70px;
+    box-shadow: 0 30px 80px rgba(120, 70, 20, 0.12);
+    position: relative;
+  }
+  .stage::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 8px;
+    border-radius: 28px 0 0 28px;
+    background: linear-gradient(180deg, #ff8a3d 0%, #ffb070 100%);
+  }
+  .quote {
+    text-align: center;
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    font-size: 56px;
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: -1px;
+    color: #0d0d0d;
+    margin-bottom: 70px;
+  }
+  .quote .term {
+    color: #fff;
+    background: #1a1a1a;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 46px;
+    letter-spacing: -1px;
+    padding: 6px 20px;
+    border-radius: 14px;
+    display: inline-block;
+    vertical-align: 6px;
+    margin-right: 10px;
+  }
+  .quote .colon { color: #c8b8a8; font-weight: 600; margin: 0 10px 0 0; }
+  .quote .l { color: #c75a1f; }
+  .quote .r { color: #2c5d8c; }
+  .quote .sep { color: #c8b8a8; font-weight: 600; margin: 0 14px; }
+  .translation {
+    text-align: center;
+    font-size: 18px;
+    color: #b8a698;
+    margin-top: 18px;
+    margin-bottom: 70px;
+    letter-spacing: 0.5px;
+    font-family: "Georgia", "Times New Roman", serif;
+    font-style: italic;
+  }
+  .translation .src {
+    color: #c8bcae;
+    font-size: 14px;
+    margin-left: 8px;
+    font-style: normal;
+    font-family: -apple-system, sans-serif;
+  }
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 220px 1fr;
+    gap: 24px;
+    align-items: stretch;
+  }
+  .actor {
+    background: #fbf4ea;
+    border: 2px solid #f1e3d0;
+    border-radius: 18px;
+    padding: 32px 30px;
+    position: relative;
+  }
+  .actor.left {
+    background: #fff4e8;
+    border-color: #ffd9b3;
+  }
+  .actor.right {
+    background: #f1f6fb;
+    border-color: #cfe0f0;
+  }
+  .actor-title {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+  .actor-name {
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+  }
+  .actor-name.l { color: #c75a1f; }
+  .actor-name.r { color: #2c5d8c; }
+  .actor-tag {
+    font-size: 14px;
+    background: rgba(0,0,0,0.05);
+    padding: 3px 10px;
+    border-radius: 6px;
+    color: #555;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+  }
+  .actor-sub {
+    font-size: 16px;
+    color: #98886e;
+    margin-bottom: 22px;
+  }
+  .group-label {
+    font-size: 14px;
+    font-weight: 700;
+    color: #98886e;
+    letter-spacing: 1.5px;
+    margin-bottom: 10px;
+    margin-top: 18px;
+    text-transform: uppercase;
+  }
+  .group-label:first-of-type { margin-top: 0; }
+  ul.items {
+    list-style: none;
+    padding: 0;
+  }
+  ul.items li {
+    font-size: 19px;
+    line-height: 1.5;
+    padding: 6px 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .check {
+    color: #2d8f5a;
+    font-weight: 800;
+    font-size: 20px;
+    line-height: 1.3;
+    min-width: 18px;
+  }
+  .cross {
+    color: #c14d3a;
+    font-weight: 800;
+    font-size: 20px;
+    line-height: 1.3;
+    min-width: 18px;
+  }
+  .protocol {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .pill {
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    background: #1a1a1a;
+    padding: 8px 16px;
+    border-radius: 999px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+  .pill.from-l { background: #c75a1f; }
+  .pill.from-r { background: #2c5d8c; }
+  .arrow-svg {
+    width: 180px;
+    height: 80px;
+  }
+  .protocol-label {
+    font-size: 13px;
+    color: #98886e;
+    letter-spacing: 1px;
+    margin-top: 4px;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  .footer {
+    text-align: center;
+    margin-top: 56px;
+    padding-top: 36px;
+    border-top: 1px dashed #e8d8c4;
+  }
+  .footer .formula {
+    font-size: 22px;
+    color: #555;
+    letter-spacing: 0.3px;
+  }
+  .footer .formula b {
+    color: #c75a1f;
+    font-weight: 700;
+  }
+  .footer .formula b.r {
+    color: #2c5d8c;
+  }
+  .footer .formula .eq {
+    color: #1a1a1a;
+    font-weight: 800;
+    margin: 0 12px;
+  }
+  .footer .formula .ans {
+    background: #1a1a1a;
+    color: #fff;
+    padding: 4px 14px;
+    border-radius: 8px;
+    font-weight: 800;
+    margin-left: 6px;
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="quote">
+      <span class="term">Tool Use</span><span class="colon">：</span><span class="l">模型负责说</span><span class="sep">，</span><span class="r">客户端负责做</span>
+    </div>
+
+    <div class="split">
+      <!-- Left: Claude (模型) -->
+      <div class="actor left">
+        <div class="actor-title">
+          <span class="actor-name l">大模型</span>
+          <span class="actor-tag">Claude / LLM</span>
+        </div>
+        <div class="actor-sub">只会"说话"</div>
+
+        <ul class="items">
+          <li><span class="check">✓</span><span>决定调哪个工具</span></li>
+          <li><span class="check">✓</span><span>决定参数怎么填</span></li>
+          <li><span class="check">✓</span><span>读懂结果继续说</span></li>
+        </ul>
+      </div>
+
+      <!-- Middle: Protocol arrows -->
+      <div class="protocol">
+        <span class="pill from-l">tool_use →</span>
+        <svg class="arrow-svg" viewBox="0 0 180 80">
+          <defs>
+            <marker id="arrR" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+              <path d="M0,0 L10,5 L0,10 Z" fill="#c75a1f"/>
+            </marker>
+            <marker id="arrL" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+              <path d="M0,0 L10,5 L0,10 Z" fill="#2c5d8c"/>
+            </marker>
+          </defs>
+          <line x1="20" y1="22" x2="160" y2="22" stroke="#c75a1f" stroke-width="3" marker-end="url(#arrR)"/>
+          <line x1="160" y1="58" x2="20" y2="58" stroke="#2c5d8c" stroke-width="3" marker-end="url(#arrL)"/>
+        </svg>
+        <span class="pill from-r">← tool_result</span>
+      </div>
+
+      <!-- Right: Claude Code (客户端) -->
+      <div class="actor right">
+        <div class="actor-title">
+          <span class="actor-name r">Claude Code</span>
+          <span class="actor-tag">你的命令行</span>
+        </div>
+        <div class="actor-sub">真去做事的"那只手"</div>
+
+        <ul class="items">
+          <li><span class="check">✓</span><span>真的执行命令</span></li>
+          <li><span class="check">✓</span><span>真的发网络请求</span></li>
+          <li><span class="check">✓</span><span>真的读写文件</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

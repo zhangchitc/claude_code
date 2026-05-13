@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prompt Cache 实战避坑</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    background: #0f0f0f;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 36px 24px 80px;
+  }
+
+  h1 { font-size: 28px; font-weight: 600; color: #fff; margin-bottom: 24px; letter-spacing: 0.5px; }
+  h2 { font-size: 22px; font-weight: 600; color: #fff; margin-bottom: 18px; }
+
+  .tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 1280px;
+  }
+  .tab-btn {
+    padding: 10px 16px;
+    border: 2px solid #333;
+    border-radius: 10px;
+    background: transparent;
+    color: #aaa;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.25s;
+    font-family: inherit;
+  }
+  .tab-btn:hover { border-color: #555; color: #fff; }
+  .tab-btn.active {
+    border-color: #f59e0b;
+    color: #fff;
+    background: rgba(245, 158, 11, 0.12);
+  }
+
+  .view { display: none; max-width: 1100px; width: 100%; }
+  .view.active { display: block; }
+
+
+  /* ========= Tab 1: Chain ========= */
+  .chain-wrap { margin: 24px auto 16px; max-width: 1140px; }
+  .chain-bar {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .chain-seg {
+    background: #1a1a1a;
+    border: 3px solid #333;
+    border-radius: 12px;
+    padding: 22px 14px;
+    text-align: center;
+    transition: all 0.3s;
+    position: relative;
+  }
+  .chain-seg .name {
+    font-size: 19px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 8px;
+  }
+  .chain-seg .lbl {
+    font-size: 14px;
+    color: #bbb;
+    line-height: 1.5;
+  }
+  .chain-seg.tools {
+    border-color: #34d399;
+    background: rgba(52, 211, 153, 0.10);
+  }
+  .chain-seg.tools .name { color: #34d399; }
+  .chain-seg.system {
+    border-color: #818cf8;
+    background: rgba(129, 140, 248, 0.10);
+  }
+  .chain-seg.system .name { color: #a5b4fc; }
+  .chain-seg.claudemd {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.10);
+  }
+  .chain-seg.claudemd .name { color: #fbbf24; }
+  .chain-seg.history {
+    border-color: #60a5fa;
+    background: rgba(96, 165, 250, 0.10);
+  }
+  .chain-seg.history .name { color: #60a5fa; }
+  .chain-axis {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 4px;
+    margin-bottom: 22px;
+    font-size: 14px;
+  }
+  .chain-axis .left { color: #ef4444; font-weight: 600; }
+  .chain-axis .arrow { color: #555; flex: 1; text-align: center; letter-spacing: 8px; }
+  .chain-axis .right { color: #f59e0b; font-weight: 600; }
+  .lead-rule {
+    background: rgba(245, 158, 11, 0.10);
+    border-left: 4px solid #f59e0b;
+    border-radius: 8px;
+    padding: 18px 24px;
+    font-size: 16px;
+    color: #fff;
+    line-height: 1.8;
+    margin-bottom: 28px;
+  }
+  .lead-rule strong { color: #f59e0b; }
+  .lead-rule code {
+    background: #2a2a2a;
+    color: #f59e0b;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  }
+
+  /* ========= Rule headline (top, prominent) + Why box (separate) ========= */
+  .rule-headline {
+    padding: 8px 4px 0;
+    margin-bottom: 36px;
+    position: relative;
+  }
+  .rule-headline .text {
+    font-size: 34px;
+    color: #fff;
+    font-weight: 800;
+    line-height: 1.4;
+    letter-spacing: 1px;
+    margin: 0;
+  }
+  .rule-headline .text .hi {
+    color: #fbbf24;
+  }
+  .rule-headline .text code {
+    color: #fbbf24;
+    font-size: 30px;
+    font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+    font-weight: 700;
+    background: none;
+    padding: 0;
+  }
+
+  .why-box {
+    background: #141414;
+    border-left: 3px solid #555;
+    border-radius: 6px;
+    padding: 18px 26px;
+    margin: 24px 0 18px;
+  }
+  .why-box .why-tag {
+    font-size: 14px;
+    color: #888;
+    margin-bottom: 10px;
+    letter-spacing: 2px;
+    font-weight: 600;
+  }
+  .why-box .why-text {
+    font-size: 15px;
+    color: #ccc;
+    line-height: 1.85;
+  }
+  .why-box strong { color: #f59e0b; }
+  .why-box code {
+    background: #2a2a2a;
+    color: #f59e0b;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  }
+
+  /* ========= Tab 2: Buckets ========= */
+  .buckets { display: flex; gap: 60px; justify-content: center; margin-top: 32px; align-items: flex-end; }
+  .bucket {
+    width: 320px;
+    background: #1a1a1a;
+    border: 2px solid #333;
+    border-radius: 14px;
+    padding: 24px;
+    text-align: center;
+  }
+  .bucket .name { font-size: 22px; font-weight: 600; color: #fff; margin-bottom: 16px; }
+  .bucket.opus { border-color: #6366f1; }
+  .bucket.sonnet { border-color: #14b8a6; }
+  .token-grid {
+    height: 180px;
+    background: #0a0a0a;
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    align-content: flex-end;
+    margin-bottom: 14px;
+  }
+  .tk { width: 12px; height: 12px; border-radius: 2px; }
+  .tk.full-opus { background: #6366f1; }
+  .tk.full-sonnet { background: #14b8a6; }
+  .bucket .meta { font-size: 14px; color: #aaa; }
+  .bucket .meta .num { color: #fff; font-weight: 600; font-size: 17px; }
+  .vs {
+    font-size: 36px;
+    color: #f59e0b;
+    font-weight: 700;
+    align-self: center;
+    margin-bottom: 100px;
+  }
+  /* ========= Tab 3: Tools array ========= */
+  .tools-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    background: #1a1a1a;
+    border: 2px solid #2d4a3e;
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin-bottom: 18px;
+    width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .tools-row.broken { border-color: #b91c1c; background: rgba(185, 28, 28, 0.12); }
+  .tool-box {
+    background: #2d4a3e;
+    color: #fff;
+    font-size: 14px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    min-width: 56px;
+    text-align: center;
+  }
+  .tool-box.new { background: #f59e0b; color: #000; font-weight: 600; }
+
+  /* ========= Tab 4: Messages pollution ========= */
+  .pollute-section {
+    background: #1a1a1a;
+    border: 2px solid #333;
+    border-radius: 14px;
+    padding: 22px;
+    margin: 0 auto 18px;
+    max-width: 700px;
+  }
+  .pollute-section h3 {
+    font-size: 16px;
+    color: #fff;
+    margin-bottom: 14px;
+    font-weight: 600;
+  }
+  .pollute-section h3 .badge-num {
+    background: #f59e0b;
+    color: #000;
+    padding: 2px 10px;
+    border-radius: 6px;
+    font-size: 14px;
+    margin-right: 8px;
+  }
+
+  .blocks-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; }
+  .blk {
+    padding: 22px 18px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    text-align: center;
+    min-width: 110px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .blk.bg-tools { background: #2d4a3e; }
+  .blk.bg-system { background: #3a3d5c; }
+  .blk.bg-inject { background: #4a3a2e; }
+  .blk.bg-claude { background: #f59e0b; color: #000; }
+  .blk.bg-input { background: #1a3a5c; }
+  .blk.broken { background: #b91c1c !important; color: #fff !important; }
+
+  .pollute-explain {
+    margin-top: 14px;
+    color: #aaa;
+    font-size: 14px;
+    line-height: 1.7;
+    padding: 10px 0 0;
+    border-top: 1px solid #2a2a2a;
+  }
+  .pollute-explain strong { color: #f87171; }
+
+  /* ========= Tab 6: TTL ========= */
+  .ttl-wrap { display: flex; gap: 40px; justify-content: center; margin-top: 24px; }
+  .ttl-card {
+    width: 360px;
+    background: #1a1a1a;
+    border: 2px solid #333;
+    border-radius: 14px;
+    padding: 26px;
+    text-align: center;
+  }
+  .ttl-card.ok { border-color: #059669; }
+  .ttl-card.dead { border-color: #b91c1c; }
+  .clock {
+    font-size: 64px;
+    font-weight: 700;
+    margin: 14px 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .ttl-card.ok .clock { color: #34d399; }
+  .ttl-card.dead .clock { color: #f87171; }
+  .ttl-state {
+    font-size: 14px;
+    color: #ccc;
+    line-height: 1.7;
+    margin-top: 12px;
+    padding: 12px;
+    background: #0a0a0a;
+    border-radius: 8px;
+    text-align: left;
+  }
+
+</style>
+</head>
+<body>
+
+<h1>Prompt Cache 实战避坑</h1>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="t1">1·心法链条</button>
+  <button class="tab-btn" data-tab="t2">2·切模型</button>
+  <button class="tab-btn" data-tab="t3">3·装新MCP</button>
+  <button class="tab-btn" data-tab="t5">4·messages污染</button>
+  <button class="tab-btn" data-tab="t6">5·idle 5分钟</button>
+</div>
+
+<!-- Tab 1: Chain framework -->
+<div class="view active" id="t1">
+  <div class="rule-headline">
+    <div class="text">越靠左<span class="hi">越要锁死</span>，左边动一下<span class="hi">右边全废</span></div>
+  </div>
+
+  <div class="chain-wrap">
+    <div class="chain-bar">
+      <div class="chain-seg tools" data-idx="0">
+        <div class="name">tools</div>
+        <div class="lbl">所有工具定义<br>含MCP</div>
+      </div>
+      <div class="chain-seg system" data-idx="1">
+        <div class="name">system</div>
+        <div class="lbl">Claude Code身份+行为准则<br>启动参数注入</div>
+      </div>
+      <div class="chain-seg claudemd" data-idx="2">
+        <div class="name">CLAUDE.md / skills</div>
+        <div class="lbl">+ hooks / MCP指南<br>启动时注入 messages</div>
+      </div>
+      <div class="chain-seg history" data-idx="3">
+        <div class="name">messages</div>
+        <div class="lbl">对话历史+工具调用<br>+你刚刚发的那句</div>
+      </div>
+    </div>
+    <div class="chain-axis">
+      <span class="left">← 一动全塌</span>
+      <span class="arrow">·　·　·　·</span>
+      <span class="right">一动只伤自己 →</span>
+    </div>
+  </div>
+
+  <div class="why-box">
+    <div class="why-tag">为什么</div>
+    <div class="why-text">
+      把请求想成一根从左到右的链条：<strong>tools → system → CLAUDE.md/skills → messages</strong>。Anthropic的cache系统按这个顺序逐段算hash。改了链条中间某一段，从这段往右所有cache跟着失效，左边的保住。所以越靠左的段，改一次代价越大。
+    </div>
+  </div>
+
+</div>
+
+<!-- Tab 2: Buckets -->
+<div class="view" id="t2">
+  <div class="rule-headline">
+    <div class="text">session中途不要 <code>/model</code>，<span class="hi">缓存按模型隔离</span></div>
+  </div>
+
+  <div class="buckets">
+    <div class="bucket opus">
+      <div class="name">Opus的缓存</div>
+      <div class="token-grid" id="opus-grid"></div>
+      <div class="meta">已缓存 <span class="num">100,000</span> tokens</div>
+    </div>
+    <div class="vs">/model →</div>
+    <div class="bucket sonnet">
+      <div class="name">Sonnet的缓存</div>
+      <div class="token-grid" id="sonnet-grid"></div>
+      <div class="meta">缓存 <span class="num" style="color:#f87171;">0</span> tokens</div>
+    </div>
+  </div>
+
+  <div class="why-box">
+    <div class="why-tag">为什么</div>
+    <div class="why-text">
+      每个模型有<strong>独立的缓存</strong>，跨模型完全隔离。Opus写的缓存，Sonnet看不见。跟Opus聊了10万token再切Sonnet，等于从零开始重建——账单瞬间从<strong>0.1×基础价跳回1.25×基础价</strong>。
+    </div>
+  </div>
+
+</div>
+
+<!-- Tab 3: Tools / startup flags -->
+<div class="view" id="t3">
+  <div class="rule-headline">
+    <div class="text">装新MCP后<span class="hi">别 /resume</span>，tools变了<span class="hi">缓存全废</span></div>
+  </div>
+
+  <div style="font-size:14px; color:#aaa; margin: 20px 0 6px; text-align:center;">tools 数组（原本29个工具）</div>
+  <div class="tools-row">
+    <div class="tool-box">Read</div>
+    <div class="tool-box">Edit</div>
+    <div class="tool-box">Bash</div>
+    <div class="tool-box">Grep</div>
+    <div class="tool-box">Task</div>
+    <div class="tool-box">...</div>
+  </div>
+
+  <div style="text-align:center; color:#f59e0b; font-size:18px; margin: 8px 0;">↓ 装一个新MCP</div>
+
+  <div style="font-size:14px; color:#aaa; margin: 0 0 6px; text-align:center;">tools 数组变了（30个）</div>
+  <div class="tools-row broken">
+    <div class="tool-box">Read</div>
+    <div class="tool-box">Edit</div>
+    <div class="tool-box">Bash</div>
+    <div class="tool-box">Grep</div>
+    <div class="tool-box">Task</div>
+    <div class="tool-box">...</div>
+    <div class="tool-box new">+ 新MCP</div>
+  </div>
+
+  <div class="why-box">
+    <div class="why-tag">为什么</div>
+    <div class="why-text">
+      装新 MCP 动到 <strong>tools 层</strong>（链条最左边），hash 一变，下面 system 和 messages 跟着失效——<strong>三层一起重建</strong>。好在 MCP 只在 Claude Code 启动时读一次：session 跑着装新 MCP，当前 session 不受影响。
+      <br><br>
+      <strong>怎么办：</strong>启动前一次装好。装完<strong>别 /resume 也别 /reload-plugins</strong>——这两个命令会让 Claude Code 重读配置，tools 数组重新组装，cache prefix 对不上，之前的 cache 全丢。开新 session 而不是 /resume。
+    </div>
+  </div>
+
+</div>
+
+<!-- Tab 4: Messages pollution -->
+<div class="view" id="t5">
+  <div class="rule-headline">
+    <div class="text">改CLAUDE.md或装新skill后<span class="hi">别 /resume</span></div>
+  </div>
+
+  <div class="pollute-section">
+    <h3>messages 层 · 改 CLAUDE.md 或装新 skill</h3>
+    <div class="blocks-row" id="claude-blocks">
+      <div class="blk bg-inject">hooks 注入</div>
+      <div class="blk bg-inject">MCP 指南</div>
+      <div class="blk bg-claude broken">skills 列表 ✏</div>
+      <div class="blk bg-claude broken">CLAUDE.md ✏</div>
+      <div class="blk bg-input broken">你的输入</div>
+    </div>
+    <div class="pollute-explain">
+      <strong>CLAUDE.md 和 skill 列表都注入在 messages 层</strong>：CLAUDE.md 是 block[3]，skill 列表是 block[2]。两个都只在 Claude Code 启动时读一次——所以 session 内改文件或装新 skill，当前 session 看不到。但你 <strong>/resume</strong> 回来，Claude Code 重读、重新组装 messages[0]，block 内容变了，跟之前的 cache 对不上，messages 整段重建。
+    </div>
+  </div>
+
+</div>
+
+<!-- Tab 6: TTL -->
+<div class="view" id="t6">
+  <div class="rule-headline">
+    <div class="text">别让cache<span class="hi">闲置超过5分钟</span>，过期<span class="hi">直接删</span></div>
+  </div>
+
+  <div class="ttl-wrap">
+    <div class="ttl-card ok">
+      <div style="font-size:15px; color:#34d399; font-weight:600;">5分钟内</div>
+      <div class="clock">02:18</div>
+      <div style="font-size:14px; color:#888;">距离上次请求</div>
+      <div class="ttl-state">
+        ✓ cache条目还在<br>
+        ✓ 新请求 cache_read 命中<br>
+        ✓ TTL自动续期5分钟<br>
+        <span style="color:#34d399; font-weight:600;">→ 几乎不花钱</span>
+      </div>
+    </div>
+    <div class="ttl-card dead">
+      <div style="font-size:15px; color:#f87171; font-weight:600;">超过5分钟</div>
+      <div class="clock">07:42</div>
+      <div style="font-size:14px; color:#888;">距离上次请求</div>
+      <div class="ttl-state">
+        × 服务器删除cache条目<br>
+        × 新请求 cache_read = 0<br>
+        × cache_creation 重新写整段<br>
+        <span style="color:#f87171; font-weight:600;">→ 整段重建成本</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="why-box">
+    <div class="why-tag">为什么</div>
+    <div class="why-text">
+      官方<strong>默认TTL是5分钟</strong>，超过这个时间没新请求，cache条目直接被删——不是hash对不上，是服务器主动清掉。回来再发消息，整段从头重新写入。
+      <br><br>
+      <strong>怎么办：</strong>启动 Claude Code 之前先 <code>export ENABLE_PROMPT_CACHING_1H=1</code>，cache 闲置 1 小时才过期。写入略贵，长会话命中一次就回本。
+    </div>
+  </div>
+
+</div>
+
+<script>
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  // Tab 2: fill token grids
+  function fillGrid(id, count, klass) {
+    const grid = document.getElementById(id);
+    grid.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+      const tk = document.createElement('div');
+      tk.className = 'tk ' + klass;
+      grid.appendChild(tk);
+    }
+  }
+  fillGrid('opus-grid', 180, 'full-opus');
+  fillGrid('sonnet-grid', 0, 'full-sonnet');
+</script>
+
+</body>
+</html>
