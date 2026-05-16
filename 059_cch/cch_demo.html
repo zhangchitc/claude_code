@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cch · x-anthropic-billing-header 拆解</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    background: #fdf6ec;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 56px 32px 80px;
+    color: #1a1a1a;
+  }
+  .stage {
+    width: 1320px;
+    background: #ffffff;
+    border-radius: 28px;
+    padding: 56px 64px 56px 72px;
+    box-shadow: 0 30px 80px rgba(120, 70, 20, 0.12);
+    position: relative;
+  }
+  .stage::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 8px;
+    border-radius: 28px 0 0 28px;
+    background: linear-gradient(180deg, #ff8a3d 0%, #ffb070 100%);
+  }
+  h1 {
+    font-size: 32px;
+    font-weight: 800;
+    color: #0d0d0d;
+    margin-bottom: 28px;
+    letter-spacing: -0.4px;
+    text-align: center;
+  }
+  h1 .mono {
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    background: #1a1a1a;
+    color: #fff;
+    padding: 4px 14px;
+    border-radius: 10px;
+    font-size: 26px;
+    vertical-align: 3px;
+    margin-right: 6px;
+    letter-spacing: -0.5px;
+  }
+
+  /* Tabs */
+  .turns { display: flex; gap: 12px; margin-bottom: 36px; flex-wrap: wrap; justify-content: center; }
+  .turn-btn {
+    padding: 11px 22px;
+    border: 2px solid #f1e3d0;
+    border-radius: 10px;
+    background: #fbf5ed;
+    color: #98886e;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.25s;
+    font-family: inherit;
+    font-weight: 600;
+  }
+  .turn-btn:hover { border-color: #ffd9b3; color: #c75a1f; }
+  .turn-btn.active {
+    border-color: #c75a1f;
+    color: #c75a1f;
+    background: #fff4e8;
+  }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .section-label {
+    font-size: 16px;
+    color: #1a1a1a;
+    font-weight: 700;
+    margin-bottom: 16px;
+    margin-top: 4px;
+  }
+  .section-label .dim { color: #98886e; font-weight: 500; margin-left: 8px; font-size: 14px; }
+
+  /* ============ Tab 1: two requests stacked ============ */
+  .req-stack {
+    background: #fbf5ed;
+    border: 2px solid #f1e3d0;
+    border-radius: 14px;
+    padding: 22px 26px;
+    margin-bottom: 28px;
+  }
+  .req-row {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 18px;
+    align-items: center;
+    padding: 10px 0;
+  }
+  .req-row + .req-row { border-top: 1px dashed #e8d8c0; }
+  .req-tag {
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 14px;
+    color: #98886e;
+    background: #fff;
+    border: 1px solid #f1e3d0;
+    padding: 5px 12px;
+    border-radius: 6px;
+    letter-spacing: 0.5px;
+    font-weight: 700;
+    text-align: center;
+  }
+  .sys-row {
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 15px;
+    color: #555;
+    line-height: 1.6;
+    white-space: nowrap;
+    overflow-x: auto;
+  }
+  .field-key { color: #98886e; }
+  .field-static { color: #2c5d8c; font-weight: 700; }
+  .field-entry  { color: #7c3aed; font-weight: 700; }
+  .field-cch {
+    background: #c14d3a;
+    color: #fff;
+    padding: 2px 9px;
+    border-radius: 5px;
+    font-weight: 800;
+    letter-spacing: 1px;
+  }
+
+  /* field breakdown — vertical bullet list */
+  .breakdown {
+    background: #fff;
+    border: 2px solid #f1e3d0;
+    border-radius: 14px;
+    padding: 18px 22px;
+    margin-bottom: 16px;
+  }
+  .brk-item {
+    display: grid;
+    grid-template-columns: 14px 180px 1fr;
+    gap: 16px;
+    align-items: center;
+    padding: 12px 0;
+  }
+  .brk-item + .brk-item { border-top: 1px dashed #f1e3d0; }
+  .brk-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    align-self: center;
+  }
+  .brk-item.k1 .brk-dot { background: #2c5d8c; }
+  .brk-item.k2 .brk-dot { background: #7c3aed; }
+  .brk-item.k3 .brk-dot { background: #c14d3a; box-shadow: 0 0 0 4px rgba(193,77,58,0.15); }
+  .brk-name {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 16px;
+    color: #1a1a1a;
+    font-weight: 800;
+  }
+  .brk-item.k1 .brk-name { color: #2c5d8c; }
+  .brk-item.k2 .brk-name { color: #7c3aed; }
+  .brk-item.k3 .brk-name { color: #c14d3a; }
+  .brk-desc { font-size: 15px; color: #555; line-height: 1.5; }
+  .brk-desc b { color: #1a1a1a; font-weight: 700; }
+  .brk-item.k3 .brk-desc b.bad { color: #c14d3a; }
+
+  .note-line {
+    text-align: center;
+    font-size: 15px;
+    color: #1a1a1a;
+    margin-top: 18px;
+    padding: 14px 20px;
+    background: #fff4e8;
+    border: 2px solid #ffd9b3;
+    border-radius: 10px;
+    font-weight: 500;
+  }
+  .note-line b { color: #c75a1f; font-weight: 800; }
+
+  /* ============ Tab 2: prefix structure ============ */
+  .bar-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 18px;
+    margin-bottom: 28px;
+  }
+  .bar-tag {
+    flex: 0 0 auto;
+    font-size: 14px;
+    color: #98886e;
+    background: #fff;
+    border: 1px solid #f1e3d0;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-family: "JetBrains Mono", monospace;
+    letter-spacing: 0.5px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 22px;
+    white-space: nowrap;
+  }
+  .bar-wrap {
+    padding-top: 52px;
+    padding-bottom: 4px;
+    flex: 0 1 auto;
+  }
+  /* Breakpoint: vertical line at segment right edge + dot on top + label above (055 style) */
+  .seg .bp {
+    position: absolute;
+    right: 0;
+    top: -4px;
+    bottom: -4px;
+    width: 3px;
+    z-index: 10;
+  }
+  .seg .bp::after {
+    content: '';
+    position: absolute;
+    top: -8px;
+    right: -7px;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: inherit;
+    z-index: 6;
+  }
+  .seg .bp .lbl {
+    position: absolute;
+    top: -40px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 14px;
+    background: #fff;
+    padding: 3px 11px;
+    border-radius: 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-weight: 700;
+    white-space: nowrap;
+    z-index: 11;
+  }
+  .seg .bp .lbl.lbl-left { left: auto; right: 0; transform: translateX(0); }
+  /* Anchor (静止, 在 system 末尾): sky blue — 跟 055 一致 */
+  .seg .bp.bp-anchor { background: #38bdf8; box-shadow: 0 0 4px rgba(56,189,248,0.5); }
+  .seg .bp.bp-anchor::after { box-shadow: 0 0 6px rgba(56,189,248,0.5); }
+  .seg .bp.bp-anchor .lbl { color: #0284c7; border: 2px solid #38bdf8; }
+  /* Cursor (移动, 跟着最新 user 消息): warm orange — 跟 055 一致 */
+  .seg .bp.bp-cursor { background: #c75a1f; box-shadow: 0 0 4px rgba(199,90,31,0.45); }
+  .seg .bp.bp-cursor::after { box-shadow: 0 0 6px rgba(199,90,31,0.45); }
+  .seg .bp.bp-cursor .lbl { color: #c75a1f; border: 2px solid #c75a1f; }
+  /* Miss ✗ — 055 风格的红色 ✗ */
+  .seg .bp .bp-miss {
+    position: absolute;
+    top: -66px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #dc2626;
+    font-size: 22px;
+    font-weight: 800;
+    z-index: 12;
+    line-height: 1;
+  }
+  .seg .bp .bp-miss.lbl-left { left: auto; right: 0; transform: translateX(0); }
+  .prefix-bar {
+    display: flex;
+    height: 68px;
+    border-radius: 10px;
+    overflow: visible;
+    position: relative;
+    width: fit-content;
+    border: 1px solid #f1e3d0;
+  }
+  .seg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1a1a;
+    position: relative;
+    height: 68px;
+  }
+  .seg .inner {
+    padding: 0 10px;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    line-height: 1.3;
+    overflow: hidden;
+    white-space: nowrap;
+    width: 100%;
+  }
+  .seg .sub {
+    font-size: 14px;
+    opacity: 0.8;
+    margin-top: 3px;
+    font-weight: 500;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .seg-tools  { background: #d8e7d2; color: #2d5a2d; }
+  .seg-sys1   { background: #e8dccd; color: #6b4a2b; }
+  .seg-sys2   { background: #d8d4ea; color: #4b3a7a; }
+  .seg-user   { background: #cce0ee; color: #1a4870; }
+  .seg-cch {
+    background: #c14d3a;
+    color: #fff;
+    box-shadow: 0 0 0 2px #7a1f10 inset, 0 6px 18px rgba(193,77,58,0.35);
+    position: relative;
+  }
+  .seg-cch::before {
+    content: "每轮都变 ⚠";
+    position: absolute;
+    top: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #7a1f10;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+    letter-spacing: 0.5px;
+    z-index: 5;
+  }
+  .seg-cch .inner > div:first-child { color: #ffd9b3; font-weight: 700; }
+  .seg-cch .sub {
+    background: #fff;
+    color: #7a1f10;
+    padding: 3px 9px;
+    border-radius: 5px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    opacity: 1;
+    margin-top: 5px;
+  }
+  .seg-cch .sub.v1, .seg-cch .sub.v2 { color: #7a1f10; }
+
+
+  .hash-row {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-top: 8px;
+    margin-bottom: 24px;
+    padding-left: 4px;
+    flex-wrap: wrap;
+  }
+  .hash-arrow {
+    font-size: 22px;
+    color: #c14d3a;
+    font-weight: 800;
+  }
+  .hash-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 14px;
+    background: #fff;
+    border: 2px solid #f1e3d0;
+    padding: 8px 14px;
+    border-radius: 8px;
+    color: #1a1a1a;
+    font-weight: 600;
+  }
+  .hash-pill.h1 { border-color: #c14d3a; }
+  .hash-pill.h1 b { color: #b91c1c; }
+  .hash-pill.h2 { border-color: #c14d3a; }
+  .hash-pill.h2 b { color: #b45309; }
+  .miss-tag {
+    display: inline-block;
+    font-size: 15px;
+    background: #c14d3a;
+    color: #fff;
+    font-weight: 800;
+    padding: 8px 18px;
+    border-radius: 8px;
+    letter-spacing: 1px;
+  }
+
+  .legend-row {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 14px;
+    color: #555;
+    margin-top: 4px;
+  }
+  .legend-row span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend-row i {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid rgba(0,0,0,0.08);
+  }
+
+  /* ============ Tab 3: JS + Zig layered ============ */
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 22px;
+  }
+  .layer {
+    background: #fff;
+    border: 2px solid #f1e3d0;
+    border-radius: 14px;
+    padding: 20px 24px;
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    column-gap: 24px;
+    row-gap: 12px;
+  }
+  .layer .layer-tag  { grid-column: 1; grid-row: 1 / span 2; align-self: center; }
+  .layer .layer-code { grid-column: 2; grid-row: 1; }
+  .layer .layer-note { grid-column: 2; grid-row: 2; }
+  .layer.js   { border-left: 6px solid #2c5d8c; background: #f1f6fb; border-color: #cfe0f0; border-left-color: #2c5d8c; }
+  .layer.buf  { border-left: 6px solid #98886e; background: #fbf5ed; }
+  .layer.zig  { border-left: 6px solid #c75a1f; background: #fff4e8; border-color: #ffd9b3; border-left-color: #c75a1f; }
+  .layer.wire { border-left: 6px solid #2d8f5a; background: #ecf6ef; border-color: #c5e2ce; border-left-color: #2d8f5a; }
+
+  .layer-tag {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 14px;
+    color: #98886e;
+  }
+  .layer-tag .big {
+    display: block;
+    font-size: 19px;
+    color: #1a1a1a;
+    font-weight: 800;
+    margin-bottom: 4px;
+    font-family: -apple-system, "PingFang SC", sans-serif;
+    letter-spacing: -0.2px;
+  }
+  .layer-code {
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 15px;
+    color: #1a1a1a;
+    line-height: 1.6;
+    background: #ffffff;
+    border: 1px solid #f1e3d0;
+    border-radius: 8px;
+    padding: 14px 18px;
+    word-break: break-all;
+  }
+  .layer.buf .layer-code { background: #fff; border-color: #e8e0d2; }
+  .layer-code .code-path {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: #98886e;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed #f1e3d0;
+    letter-spacing: 0.3px;
+  }
+  .placeholder {
+    background: #98886e;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 5px;
+    font-weight: 800;
+    letter-spacing: 1px;
+  }
+  .real-cch {
+    background: #c75a1f;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 5px;
+    font-weight: 800;
+    letter-spacing: 1px;
+  }
+  .layer-note {
+    font-size: 16px;
+    color: #1a1a1a;
+    font-weight: 600;
+    line-height: 1.5;
+    font-family: -apple-system, "PingFang SC", sans-serif;
+    padding: 2px 0 0 2px;
+  }
+  .layer-note b { font-weight: 800; }
+  .layer.js  .layer-note b { color: #2c5d8c; }
+  .layer.buf .layer-note b { color: #6a5e44; }
+  .layer.zig .layer-note b { color: #c75a1f; }
+
+  .down-arrow {
+    text-align: center;
+    color: #c8b8a8;
+    font-size: 20px;
+    margin: -6px 0;
+    font-weight: 800;
+  }
+  .down-arrow span {
+    background: #ffffff;
+    padding: 0 12px;
+    color: #c75a1f;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+  }
+
+  /* ============ Tab 4: before / after ============ */
+  .fix-snippet {
+    background: #ecf6ef;
+    border: 2px solid #c5e2ce;
+    border-left: 6px solid #2d8f5a;
+    border-radius: 14px;
+    padding: 22px 28px;
+    font-family: "JetBrains Mono", "SF Mono", monospace;
+    font-size: 15px;
+    line-height: 1.65;
+    color: #1a1a1a;
+    margin-bottom: 28px;
+  }
+  .fix-path {
+    font-size: 14px;
+    color: #98886e;
+    margin-bottom: 12px;
+    font-family: "JetBrains Mono", monospace;
+    font-weight: 600;
+  }
+  .json-brace { color: #98886e; }
+  .json-key { color: #2c5d8c; font-weight: 700; }
+  .json-str { color: #b45309; font-weight: 700; }
+  .json-add {
+    background: rgba(45, 143, 90, 0.18);
+    display: inline-block;
+    padding: 0 8px;
+    border-left: 3px solid #2d8f5a;
+    border-radius: 3px;
+  }
+
+  .ba-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+  }
+  .ba-card {
+    background: #fff;
+    border: 2px solid #f1e3d0;
+    border-radius: 14px;
+    padding: 24px 26px;
+  }
+  .ba-card.before { border-left: 6px solid #c14d3a; background: #fdeae5; border-color: #f4c8bd; border-left-color: #c14d3a; }
+  .ba-card.after  { border-left: 6px solid #2d8f5a; background: #ecf6ef; border-color: #c5e2ce; border-left-color: #2d8f5a; }
+  .ba-title {
+    font-size: 18px;
+    color: #1a1a1a;
+    font-weight: 800;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .ba-title .pill {
+    font-size: 13px;
+    background: #fff;
+    color: #555;
+    padding: 3px 10px;
+    border-radius: 5px;
+    font-weight: 600;
+    font-family: "JetBrains Mono", monospace;
+    border: 1px solid #f1e3d0;
+  }
+  .ba-card.before .ba-title .pill { color: #b91c1c; border-color: #f4c8bd; }
+  .ba-card.after  .ba-title .pill { color: #2d8f5a; border-color: #c5e2ce; }
+
+  .blk-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+  .blk {
+    background: #ffffff;
+    border: 1px solid #f1e3d0;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 14px;
+    color: #1a1a1a;
+    font-family: "JetBrains Mono", monospace;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .blk .idx { color: #98886e; font-weight: 700; min-width: 56px; }
+  .blk .label { color: #1a1a1a; flex: 1; }
+  .blk.bad { border-color: #c14d3a; background: #fcd6cd; border-width: 2px; }
+  .blk.bad .label { color: #7a1f10; font-weight: 700; }
+  .blk.bad .idx { color: #c14d3a; }
+  .blk .change {
+    font-size: 13px;
+    color: #98886e;
+    background: #fbf5ed;
+    padding: 2px 8px;
+    border-radius: 5px;
+    font-weight: 600;
+  }
+  .blk.bad .change { color: #fff; background: #c14d3a; }
+
+  .outcome {
+    margin-top: 6px;
+    padding: 13px 18px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.55;
+    font-weight: 500;
+  }
+  .outcome.bad  { background: #fcd6cd; border: 2px solid #c14d3a; color: #7a1f10; }
+  .outcome.good { background: #d3ecdb; border: 2px solid #2d8f5a; color: #1a5234; }
+  .outcome b { color: #1a1a1a; font-weight: 800; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <h1><span class="mono">cch</span>x-anthropic-billing-header 里的五个字符</h1>
+
+    <div class="turns">
+      <button class="turn-btn active" data-view="compare">① 同 session 三轮对比</button>
+      <button class="turn-btn" data-view="prefix">② 提示词缓存挂在哪</button>
+      <button class="turn-btn" data-view="overwrite">③ JS+Zig 两层覆盖</button>
+      <button class="turn-btn" data-view="fix">④ 关掉之后</button>
+    </div>
+
+    <!-- ============ View 1: compare ============ -->
+    <div class="view active" id="view-compare">
+      <div class="section-label">同一个 session, 连续三轮请求, 抓包看 system[0]</div>
+
+      <div class="req-stack">
+        <div class="req-row">
+          <div class="req-tag">turn 2</div>
+          <div class="sys-row">x-anthropic-billing-header: <span class="field-static">cc_version=2.1.119.af2</span>; <span class="field-entry">cc_entrypoint=cli</span>; cch=<span class="field-cch">97bd6</span>;</div>
+        </div>
+        <div class="req-row">
+          <div class="req-tag">turn 3</div>
+          <div class="sys-row">x-anthropic-billing-header: <span class="field-static">cc_version=2.1.119.af2</span>; <span class="field-entry">cc_entrypoint=cli</span>; cch=<span class="field-cch">24c2d</span>;</div>
+        </div>
+        <div class="req-row">
+          <div class="req-tag">turn 4</div>
+          <div class="sys-row">x-anthropic-billing-header: <span class="field-static">cc_version=2.1.119.af2</span>; <span class="field-entry">cc_entrypoint=cli</span>; cch=<span class="field-cch">ead88</span>;</div>
+        </div>
+      </div>
+
+      <div class="section-label">三段拆开看</div>
+      <div class="breakdown">
+        <div class="brk-item k1">
+          <div class="brk-dot"></div>
+          <div class="brk-name">cc_version</div>
+          <div class="brk-desc">版本号 + 三位 hex 完整性 hash · 锁第一条用户消息 · 三轮都是 <b>2.1.119.af2</b></div>
+        </div>
+        <div class="brk-item k2">
+          <div class="brk-dot"></div>
+          <div class="brk-name">cc_entrypoint</div>
+          <div class="brk-desc">调用入口 · cli / sdk-cli / claude-vscode · 交互模式恒定 <b>cli</b></div>
+        </div>
+        <div class="brk-item k3">
+          <div class="brk-dot"></div>
+          <div class="brk-name">cch</div>
+          <div class="brk-desc">5 位 hex · <b class="bad">每一轮都换</b> · 97bd6 → 24c2d → ead88</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ============ View 2: prefix ============ -->
+    <div class="view" id="view-prefix">
+      <div class="section-label">服务端按 <span style="font-family:monospace">tools → system → messages</span> 顺序拼前缀 · 3 个缓存点全挂在 cch 后面</div>
+
+      <div class="bar-row">
+        <div class="bar-tag">turn 2 的前缀</div>
+        <div class="bar-wrap">
+          <div class="prefix-bar">
+            <div class="seg seg-tools" style="width:160px"><div class="inner"><div>tools</div><div class="sub">工具定义</div></div></div>
+            <div class="seg seg-cch" style="width:220px"><div class="inner"><div>system[0]</div><div class="sub v1">cch=97bd6</div></div></div>
+            <div class="seg seg-sys1" style="width:180px">
+              <div class="inner"><div>system[1]</div><div class="sub">身份提示词</div></div>
+              <div class="bp bp-anchor"><span class="lbl">breakpoint1</span></div>
+            </div>
+            <div class="seg seg-sys2" style="width:240px">
+              <div class="inner"><div>system[2]</div><div class="sub">行为准则</div></div>
+              <div class="bp bp-anchor"><span class="lbl lbl-left">breakpoint2</span></div>
+            </div>
+            <div class="seg seg-user" style="width:160px">
+              <div class="inner"><div>user msg</div><div class="sub">第一轮</div></div>
+              <div class="bp bp-cursor"><span class="lbl lbl-left">breakpoint3</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bar-row">
+        <div class="bar-tag">turn 3 的前缀</div>
+        <div class="bar-wrap">
+          <div class="prefix-bar">
+            <div class="seg seg-tools" style="width:160px"><div class="inner"><div>tools</div><div class="sub">工具定义</div></div></div>
+            <div class="seg seg-cch" style="width:220px"><div class="inner"><div>system[0]</div><div class="sub v2">cch=24c2d</div></div></div>
+            <div class="seg seg-sys1" style="width:180px">
+              <div class="inner"><div>system[1]</div><div class="sub">身份提示词</div></div>
+              <div class="bp bp-anchor"><span class="bp-miss">✗</span><span class="lbl">breakpoint1</span></div>
+            </div>
+            <div class="seg seg-sys2" style="width:240px">
+              <div class="inner"><div>system[2]</div><div class="sub">行为准则</div></div>
+              <div class="bp bp-anchor"><span class="bp-miss lbl-left">✗</span><span class="lbl lbl-left">breakpoint2</span></div>
+            </div>
+            <div class="seg seg-user" style="width:160px">
+              <div class="inner"><div>user msg</div><div class="sub">续上一轮</div></div>
+              <div class="bp bp-cursor"><span class="bp-miss lbl-left">✗</span><span class="lbl lbl-left">breakpoint3</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note-line">
+        同一个 session, turn 2 → turn 3 · cch 在 sys[0] 排在所有 breakpoint 前面 · 它一变, 3 个 breakpoint 算 hash 的字节全跟着变 · <b>一个 miss, 全部 miss</b>
+      </div>
+    </div>
+
+    <!-- ============ View 3: JS + Zig overwrite ============ -->
+    <div class="view" id="view-overwrite">
+      <div class="section-label">JS 拼模板 · Bun 的 Zig native HTTP 栈在出门前覆盖</div>
+
+      <div class="stack">
+        <div class="layer js">
+          <div class="layer-tag">
+            <span class="big">① JS 层</span>
+            getAttributionHeader()
+          </div>
+          <div class="layer-code">
+            <div class="code-path">src/constants/system.ts</div>
+            const cch = feature('NATIVE_CLIENT_ATTESTATION')<br>
+            &nbsp;&nbsp;? ' cch=<span class="placeholder">00000</span>;'<br>
+            &nbsp;&nbsp;: '';
+          </div>
+          <div class="layer-note"><b>JS 永远只拿到 00000</b> · 抓 fetch、hook XHR 都看不到真值</div>
+        </div>
+
+        <div class="down-arrow">↓ <span>请求 body 进入 HTTP 缓冲区</span> ↓</div>
+
+        <div class="layer buf">
+          <div class="layer-tag">
+            <span class="big">② HTTP buffer</span>
+            请求 body 完整字节
+          </div>
+          <div class="layer-code">
+            { ..., system: [ { text: "x-anthropic-billing-header: ...; cch=<span class="placeholder">00000</span>;" }, ... ], ... }
+          </div>
+          <div class="layer-note"><b>5 个 0 = 5 位 hex 长度</b> · Content-Length 不动, buffer 不重分配</div>
+        </div>
+
+        <div class="down-arrow">↓ <span>Bun Zig native HTTP 栈接管</span> ↓</div>
+
+        <div class="layer zig">
+          <div class="layer-tag">
+            <span class="big">③ Zig 层</span>
+            native HTTP 覆盖
+          </div>
+          <div class="layer-code">
+            <div class="code-path">bun-anthropic/src/http/Attestation.zig</div>
+            扫描 buffer · 定位 "cch=00000;" · in-place 覆盖<br>
+            { ..., system: [ { text: "...; cch=<span class="real-cch">97bd6</span>;" }, ... ], ... }
+          </div>
+          <div class="layer-note"><b>Zig 在 JS 沙箱之外执行</b> · 第三方代理只看到最终结果, 摸不到生成逻辑</div>
+        </div>
+
+        <div class="down-arrow">↓ <span>真正发到服务端</span> ↓</div>
+
+        <div class="layer wire">
+          <div class="layer-tag">
+            <span class="big">④ 上线请求</span>
+            on the wire
+          </div>
+          <div class="layer-code">
+            POST /v1/messages → system[0].text = "x-anthropic-billing-header: ...; cch=<span class="real-cch">97bd6</span>;"
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ============ View 4: fix ============ -->
+    <div class="view" id="view-fix">
+      <div class="section-label">关掉它就一行环境变量<span class="dim">官方文档未提及 · 仓库 issue #50085 在催了</span></div>
+
+      <div class="fix-snippet">
+        <div class="fix-path">~/.claude/settings.json</div>
+        <span class="json-brace">{</span><br>
+        &nbsp;&nbsp;<span class="json-key">"env"</span>: <span class="json-brace">{</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<span class="json-add"><span class="json-key">"CLAUDE_CODE_ATTRIBUTION_HEADER"</span>: <span class="json-str">"0"</span></span><br>
+        &nbsp;&nbsp;<span class="json-brace">}</span><br>
+        <span class="json-brace">}</span>
+      </div>
+
+      <div class="ba-grid">
+        <div class="ba-card before">
+          <div class="ba-title">关掉前<span class="pill">3 个 system block</span></div>
+          <div class="blk-list">
+            <div class="blk bad">
+              <div class="idx">sys[0]</div>
+              <div class="label">x-anthropic-billing-header: ...; cch=97bd6;</div>
+              <div class="change">每次变</div>
+            </div>
+            <div class="blk">
+              <div class="idx">sys[1]</div>
+              <div class="label">You are a Claude agent...</div>
+              <div class="change">不变</div>
+            </div>
+            <div class="blk">
+              <div class="idx">sys[2]</div>
+              <div class="label">行为准则 / 工具说明 / ...</div>
+              <div class="change">不变</div>
+            </div>
+          </div>
+          <div class="outcome bad">前缀 hash 每次都变 · <b>cache_read = 0</b> · 每次都重新算缓存写入</div>
+        </div>
+
+        <div class="ba-card after">
+          <div class="ba-title">关掉后<span class="pill">2 个 system block</span></div>
+          <div class="blk-list">
+            <div class="blk">
+              <div class="idx">sys[0]</div>
+              <div class="label">You are a Claude agent...</div>
+              <div class="change">不变</div>
+            </div>
+            <div class="blk">
+              <div class="idx">sys[1]</div>
+              <div class="label">行为准则 / 工具说明 / ...</div>
+              <div class="change">不变</div>
+            </div>
+          </div>
+          <div class="outcome good">前缀字节完全一致 · <b>cache_read 命中</b> · token 账单立刻降下来</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+  const btns = document.querySelectorAll('.turn-btn');
+  const views = document.querySelectorAll('.view');
+  btns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const v = btn.dataset.view;
+      btns.forEach(b => b.classList.toggle('active', b === btn));
+      views.forEach(view => view.classList.toggle('active', view.id === 'view-' + v));
+    });
+  });
+</script>
+</body>
+</html>
