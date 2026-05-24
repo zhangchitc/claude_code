@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Prompt Cache 里存的 value 到底是什么</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body);"></script>
+<style>
+:root{
+  --bg:#0f0f0f; --card:#1a1a1a; --border:#2a2a2a;
+  --text:#e0e0e0; --dim:#9a9a9a;
+  --q:#a78bfa; --k:#38bdf8; --v:#ff8a3d;
+  --green:#10b981; --amber:#d97706; --blue:#3b82f6; --red:#f87171;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;
+  background:var(--bg); color:var(--text);
+  min-height:100vh; display:flex; flex-direction:column;
+  align-items:center; padding:48px 32px;
+}
+h1{font-size:30px;font-weight:600;color:#fff;margin-bottom:26px;text-align:center;}
+.mono{font-family:"JetBrains Mono","SF Mono",Menlo,monospace;}
+
+/* tabs */
+.tabs{display:flex;gap:12px;margin-bottom:34px;flex-wrap:wrap;justify-content:center;}
+.tab-btn{padding:11px 22px;border:2px solid #333;border-radius:10px;
+  background:transparent;color:#aaa;font-size:15px;cursor:pointer;
+  transition:all .2s;font-family:inherit;}
+.tab-btn:hover{border-color:#555;color:#fff;}
+.tab-btn.active{border-color:var(--green);color:#fff;background:rgba(16,185,129,.1);}
+
+.view{display:none;width:1200px;}
+.view.active{display:block;}
+.view-title{font-size:22px;color:#fff;font-weight:600;margin-bottom:6px;}
+.view-sub{font-size:15px;color:var(--dim);margin-bottom:26px;}
+
+.card{background:var(--card);border:1px solid var(--border);
+  border-radius:12px;padding:28px 30px;}
+.sec-name{font-size:16px;color:#fff;font-weight:600;margin-bottom:20px;}
+
+/* ============ view 1 : prefill → decode 连续时间线 ============ */
+.flow1{position:relative;width:1120px;height:300px;margin:8px auto 0;}
+.flines{position:absolute;left:0;top:0;width:1120px;height:300px;
+  overflow:visible;z-index:1;}
+.fbox{position:absolute;z-index:2;background:#202020;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;color:#fff;
+  font-size:15px;font-weight:600;font-family:"JetBrains Mono",Menlo,monospace;
+  white-space:nowrap;}
+.fbox.pre{border:1.5px solid var(--k);}
+.fbox.dec{border:1.5px solid var(--v);}
+.fchip{position:absolute;z-index:2;width:76px;height:46px;border-radius:7px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;font-weight:700;}
+.fchip.pp{background:#2c5d8c;color:#fff;}
+.fchip.gg{background:var(--v);color:#1a1a1a;}
+.fcanopy{position:absolute;z-index:3;background:var(--card);
+  text-align:center;padding:3px 8px;}
+.fcanopy .ctitle{font-size:17px;font-weight:700;
+  font-family:"JetBrains Mono",Menlo,monospace;}
+.fcanopy .csub{font-size:14px;color:#cfcfcf;margin-top:3px;white-space:nowrap;}
+.fcanopy.pre .ctitle{color:var(--k);}
+.fcanopy.dec .ctitle{color:var(--v);}
+.frail-label{position:absolute;z-index:3;background:var(--card);
+  font-size:14px;color:var(--v);text-align:center;}
+.fblabel{position:absolute;z-index:2;font-size:15px;font-weight:600;
+  text-align:center;white-space:nowrap;}
+.fblabel.pp{color:#7fb5e6;}
+.fblabel.gg{color:var(--v);}
+.fellip{position:absolute;z-index:2;font-size:24px;color:#7d7d7d;font-weight:700;}
+.banner{background:rgba(16,185,129,.1);border:1px solid var(--green);
+  border-radius:10px;padding:18px 24px;font-size:17px;color:#fff;text-align:center;}
+.banner b{color:var(--green);}
+
+/* ============ view 2 : attention ============ */
+.qkv-row-pair{display:flex;gap:0;align-items:stretch;margin-bottom:18px;}
+.qkv-bridge{width:70px;height:220px;flex-shrink:0;margin:0 4px;}
+.qkv-projection{display:flex;align-items:stretch;gap:0;
+  width:560px;height:220px;flex-shrink:0;}
+.qkv-source{width:110px;flex-shrink:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;}
+.qkv-tok{width:84px;height:84px;border-radius:13px;
+  background:#2c5d8c;color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  font-size:32px;font-weight:700;}
+.qkv-tok-sub{font-size:17px;color:#cfcfcf;font-weight:600;}
+.qkv-arrows{width:130px;height:220px;flex-shrink:0;}
+.qkv-targets{flex:1;display:flex;flex-direction:column;gap:14px;}
+.qkv-target{flex:1;display:flex;align-items:center;gap:18px;
+  border-radius:10px;padding:0 16px;}
+.qkv-vec{display:flex;gap:4px;flex-shrink:0;}
+.qkv-vec span{width:20px;height:28px;border-radius:4px;}
+.q-vec span{background:var(--q);}
+.k-vec span{background:var(--k);}
+.v-vec span{background:var(--v);}
+.qkv-lbl{display:flex;flex-direction:column;gap:3px;}
+.qkv-lbl .big{font-size:21px;font-weight:800;
+  font-family:"JetBrains Mono","SF Mono",Menlo,monospace;}
+.qkv-lbl .cn{font-size:15px;font-weight:700;}
+.box-q{background:rgba(167,139,250,.13);border:1px solid var(--q);}
+.box-q .big,.box-q .cn{color:var(--q);}
+.box-k{background:rgba(56,189,248,.13);border:1px solid var(--k);}
+.box-k .big,.box-k .cn{color:var(--k);}
+.box-v{background:rgba(255,138,61,.13);border:1px solid var(--v);}
+.box-v .big,.box-v .cn{color:var(--v);}
+
+.formula{display:flex;align-items:center;justify-content:center;
+  background:#202020;border-radius:10px;
+  padding:18px 16px;margin:0;flex:1;min-width:0;}
+.formula .katex{font-size:2.5em;color:#e8e8e8;}
+
+.attn-demo{background:#1a1a1a;border:1px solid #2a2a2a;
+  border-radius:10px;padding:18px 22px 20px;margin-bottom:18px;}
+.attn-demo-cap{font-size:15px;color:#bcbcbc;margin-bottom:14px;}
+.attn-demo-cap b{color:var(--v);font-weight:700;}
+.attn-demo-row{display:flex;align-items:flex-end;justify-content:center;gap:14px;flex-wrap:nowrap;}
+.attn-row-area{display:flex;flex-direction:column;}
+.attn-arcs{width:549px;height:76px;display:block;}
+.attn-tokens{display:flex;gap:9px;width:549px;}
+.attn-chip{min-width:84px;padding:10px 14px;border-radius:8px;
+  font-size:18px;font-weight:700;color:#fff;background:#2c5d8c;
+  font-family:"PingFang SC","Helvetica Neue",sans-serif;
+  white-space:nowrap;text-align:center;}
+.attn-chip.predict{background:transparent;border:1.5px dashed #888;color:#aaa;}
+.attn-arrow-pred{font-size:24px;color:#7a7a7a;font-weight:700;
+  padding:0 4px 8px;align-self:flex-end;}
+.attn-result{padding:10px 18px;border-radius:8px;font-size:21px;font-weight:800;
+  background:var(--v);color:#1a1a1a;
+  font-family:"PingFang SC","Helvetica Neue",sans-serif;align-self:flex-end;}
+
+/* ============ view 3 : matrices ============ */
+.formula-recap{display:flex;justify-content:center;
+  background:#202020;border-radius:10px;
+  padding:14px 16px;margin-bottom:22px;}
+.formula-recap .katex{font-size:1.9em;color:#e8e8e8;}
+.mtx-flow{display:grid;
+  grid-template-columns: 120px 30px 175px 30px 175px 30px 120px 30px 120px;
+  align-items:center;justify-items:center;justify-content:center;
+  gap:6px 10px;margin-bottom:14px;}
+.mtx{display:flex;flex-direction:column;align-items:center;gap:10px;
+  font-family:"JetBrains Mono","SF Mono",Menlo,monospace;}
+.grid{display:grid;gap:3px;}
+.cell{width:19px;height:19px;border-radius:3px;}
+.cell.c-q{background:var(--q);}
+.cell.c-k{background:var(--k);}
+.cell.c-v{background:var(--v);}
+.cell.c-score{background:#5b6472;}
+.cell.c-out{background:var(--green);}
+.cell.c-new{background:#ffe066;
+  box-shadow:0 0 0 2.5px var(--v), 0 0 14px rgba(255,224,102,.9);
+  position:relative;z-index:2;}
+.cell.c-newk{background:#bdebff;
+  box-shadow:0 0 0 2.5px var(--k), 0 0 14px rgba(189,235,255,.9);
+  position:relative;z-index:2;}
+.ml-sym{font-size:22px;font-weight:800;line-height:1;text-align:center;}
+.ml-sym sup{font-size:.7em;}
+.ml-sym.q{color:var(--q);}
+.ml-sym.k{color:var(--k);}
+.ml-sym.v{color:var(--v);}
+.ml-sym.s{color:#cdd3dc;font-size:18px;}
+.ml-sym.o{color:var(--green);}
+.ml-dim{font-size:14px;color:#9a9a9a;text-align:center;line-height:1.35;}
+.op{font-size:30px;color:#888;font-weight:700;line-height:1;}
+.op.word{font-size:15px;color:var(--dim);font-weight:600;}
+.note-line{font-size:15px;color:var(--v);margin-top:14px;font-weight:600;text-align:center;}
+.decode-note{font-size:15px;color:var(--dim);margin-top:18px;line-height:1.5;text-align:center;}
+.decode-note b{color:var(--k);}
+
+/* ============ view 4 : kv cache ============ */
+.kv-col{display:flex;flex-direction:column;align-items:center;gap:16px;}
+.kv-discard-group{display:flex;align-items:center;gap:18px;}
+.kv-discard{opacity:.55;}
+.kv-x-badge{font-size:60px;color:#f87171;font-weight:900;line-height:.8;
+  text-shadow:0 0 16px rgba(248,113,113,.6);font-family:Arial,sans-serif;}
+.kv-reason{font-size:16px;font-weight:600;text-align:center;line-height:1.5;
+  white-space:nowrap;}
+.kv-reason.discard{color:#f87171;}
+.kv-reason.keep{color:var(--green);}
+.speedup-line{display:flex;justify-content:center;align-items:center;
+  gap:18px;margin-top:18px;background:#202020;border-radius:10px;
+  padding:16px 24px;flex-wrap:wrap;}
+.cmpx-tag{font-size:14px;color:#9a9a9a;letter-spacing:.3px;font-weight:600;}
+.cmpx-no{color:#f87171;font-family:"JetBrains Mono","SF Mono",Menlo,monospace;
+  font-weight:900;font-size:26px;line-height:1;}
+.cmpx-yes{color:var(--green);font-family:"JetBrains Mono","SF Mono",Menlo,monospace;
+  font-weight:900;font-size:26px;line-height:1;}
+.cmpx-no sup,.cmpx-yes sup{font-size:.65em;}
+.cmpx-arr{color:#6a6a6a;font-size:22px;font-weight:700;}
+.cmpx-mult{color:var(--green);font-weight:800;font-size:16px;
+  background:rgba(16,185,129,.14);padding:5px 12px;border-radius:6px;
+  margin-left:6px;}
+.cmpx-legend{text-align:center;font-size:13px;color:var(--dim);margin-top:10px;}
+
+/* ============ view 5 : kv cache dataflow ============ */
+.kvf{position:relative;width:1180px;height:730px;margin:0 auto;
+  font-family:-apple-system,"PingFang SC",sans-serif;}
+.kvf-svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1;}
+
+/* matrix wrapper — 复用 Tab3 grid，小一号 cell */
+.kvf-mtx{position:absolute;padding:4px;border-radius:5px;border:1.5px solid;
+  z-index:2;display:inline-block;line-height:0;}
+.kvf-mtx > .grid{gap:2px;}
+.kvf-mtx > .grid .cell{width:12px;height:12px;border-radius:2px;}
+.kvf-mtx > .glabel{display:block;font-size:14px;font-weight:800;text-align:center;
+  margin-bottom:4px;line-height:1;font-family:"JetBrains Mono",monospace;}
+
+/* color variants */
+.kvf-mtx.m-input{border-color:#3b82f6;background:rgba(59,130,246,.1);}
+.kvf-mtx.m-input .glabel{color:#7fb5e6;}
+.kvf-mtx.m-wq,.kvf-mtx.m-rq{border-color:var(--q);background:rgba(167,139,250,.1);}
+.kvf-mtx.m-wq .glabel,.kvf-mtx.m-rq .glabel{color:var(--q);}
+.kvf-mtx.m-wk,.kvf-mtx.m-rk{border-color:var(--k);background:rgba(56,189,248,.1);}
+.kvf-mtx.m-wk .glabel,.kvf-mtx.m-rk .glabel{color:var(--k);}
+.kvf-mtx.m-wv,.kvf-mtx.m-rv{border-color:var(--v);background:rgba(255,138,61,.1);}
+.kvf-mtx.m-wv .glabel,.kvf-mtx.m-rv .glabel{color:var(--v);}
+
+/* legacy node-style still used for attention block */
+.kvf-node{position:absolute;display:flex;align-items:center;justify-content:center;
+  border:1.5px solid;border-radius:6px;
+  font-size:13px;font-weight:700;text-align:center;line-height:1.15;
+  font-family:"JetBrains Mono","SF Mono",Menlo,monospace;z-index:2;}
+.kvf-attn{border-color:#5a5a5a;background:#222;color:#cdd3dc;
+  font-size:15px;padding:0 12px;}
+.kvf-attn .katex{font-size:1.3em;color:#e8e8e8;}
+.kvf-op{position:absolute;color:#d8d8d8;font-weight:700;
+  font-family:"JetBrains Mono",monospace;line-height:1;z-index:3;
+  display:flex;align-items:center;justify-content:center;}
+.kvf-sec{position:absolute;font-size:18px;font-weight:700;
+  color:#cdd3dc;letter-spacing:.8px;z-index:2;font-family:-apple-system,"PingFang SC",sans-serif;}
+.kvf-cache{position:absolute;background:rgba(16,185,129,.06);
+  border:1.5px solid var(--green);border-radius:12px;z-index:1;
+  box-shadow:0 0 0 1px rgba(16,185,129,.35),0 0 16px rgba(16,185,129,.28);}
+.kvc-label{position:absolute;color:var(--green);font-weight:800;
+  font-size:14px;letter-spacing:.5px;font-family:-apple-system,"PingFang SC",sans-serif;
+  z-index:4;line-height:1;}
+.kvf-loop{position:absolute;border:2px dashed #555;border-radius:12px;
+  background:transparent;z-index:1;pointer-events:none;}
+.kvf-loop-tag{position:absolute;background:#2a2a2a;border:1px solid #555;
+  border-radius:6px;padding:3px 12px;font-size:13px;
+  color:#bcbcbc;font-weight:600;font-family:"JetBrains Mono",monospace;z-index:2;}
+.kvf-div{position:absolute;left:8px;right:8px;height:0;
+  border-top:1.5px dashed #444;z-index:1;}
+.kvf-lbl{position:absolute;font-size:12px;color:#9a9a9a;font-weight:600;z-index:2;
+  font-family:-apple-system,"PingFang SC",sans-serif;}
+.kvf-mtx.m-Krow{border-color:var(--k);background:rgba(56,189,248,.1);}
+.kvf-mtx.m-Krow .glabel{color:var(--k);}
+.kvf-mtx.m-Vrow{border-color:var(--v);background:rgba(255,138,61,.1);}
+.kvf-mtx.m-Vrow .glabel{color:var(--v);}
+/* highlight cells inside kvf-mtx (override default Tab3-size glow) */
+.kvf-mtx .cell.c-newk{background:#bdebff;box-shadow:0 0 0 2px #fff,0 0 8px rgba(189,235,255,.9);}
+.kvf-mtx .cell.c-new{background:#ffe066;box-shadow:0 0 0 2px #fff,0 0 8px rgba(255,224,102,.9);}
+.kv-keep-frame{display:flex;align-items:stretch;gap:38px;
+  padding:20px 30px;border-radius:14px;
+  border:2px solid var(--green);background:rgba(16,185,129,.06);
+  box-shadow:0 0 22px rgba(16,185,129,.18);}
+.kv-keep-frame .mtx{flex:0 0 auto;}
+.cache-box{background:rgba(16,185,129,.1);border:1.5px solid var(--green);
+  border-radius:10px;padding:18px 24px;text-align:center;
+  font-size:17px;color:#fff;font-weight:600;margin-bottom:20px;}
+.cache-box b{color:var(--green);}
+.punchline{font-size:19px;color:#fff;text-align:center;line-height:1.6;}
+.punchline .hl-v{background:rgba(255,138,61,.22);color:var(--v);
+  padding:2px 10px;border-radius:6px;font-weight:800;}
+
+/* ============ view 5 : cross-request ============ */
+.bar-block{margin-bottom:26px;}
+.bar-label{font-size:15px;color:#fff;font-weight:600;margin-bottom:10px;}
+.bar{display:flex;height:62px;border-radius:8px;overflow:hidden;}
+.bseg{display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:3px;font-size:14px;color:#fff;
+  font-weight:600;padding:0 8px;text-align:center;}
+.bseg .bsub{font-size:13px;font-weight:400;opacity:.85;}
+.bseg.recompute{background:var(--amber);}
+.bseg.reuse{background:var(--green);}
+.bseg.newpart{background:var(--v);}
+.bar5-note{background:#202020;border-radius:10px;padding:16px 22px;
+  font-size:15px;color:#ddd;line-height:1.55;}
+.bar5-note b{color:var(--green);}
+
+/* ============ view 6 : cross-request prompt cache (visual) ============ */
+.ppc{position:relative;width:1180px;height:580px;margin:0 auto;
+  font-family:-apple-system,"PingFang SC",sans-serif;}
+.ppc-svg{position:absolute;top:0;left:0;width:100%;height:100%;
+  pointer-events:none;z-index:1;}
+.ppc-sec{position:absolute;font-size:16px;font-weight:700;z-index:2;}
+.ppc-tokens{position:absolute;display:flex;gap:6px;z-index:2;}
+.pt{display:inline-flex;align-items:center;justify-content:center;
+  min-width:44px;height:38px;padding:0 12px;border-radius:7px;
+  font-size:14px;font-weight:700;position:relative;
+  font-family:"JetBrains Mono",Menlo,monospace;}
+.pt-sys{background:rgba(56,189,248,.18);color:#7fb5e6;border:1.5px solid var(--k);}
+.pt-q1{background:rgba(167,139,250,.18);color:#cbb8ff;border:1.5px solid var(--q);}
+.pt-cached{background:rgba(16,185,129,.18);color:#5fd9a8;border:1.5px solid var(--green);}
+.pt-q2{background:rgba(255,138,61,.18);color:#ffaa70;border:1.5px solid var(--v);}
+/* cache_control breakpoint marker (anchor, blue) — sits at chip's right edge */
+.ppc-bp{position:absolute;right:-3px;top:-6px;bottom:-6px;width:3px;
+  background:#38bdf8;box-shadow:0 0 5px rgba(56,189,248,.55);z-index:5;}
+.ppc-bp::before{content:'';position:absolute;top:-9px;right:-7px;
+  width:17px;height:17px;border-radius:50%;background:#38bdf8;z-index:6;}
+.ppc-bp .lbl{position:absolute;top:calc(100% + 12px);left:50%;
+  transform:translateX(-50%);font-size:12px;color:#38bdf8;
+  white-space:nowrap;background:#0f0f0f;padding:3px 9px;border-radius:5px;
+  font-family:"JetBrains Mono","SF Mono",Menlo,monospace;
+  border:1px solid #38bdf8;font-weight:700;}
+.ppc-write-lbl,.ppc-pull-lbl{position:absolute;font-size:14px;font-weight:700;z-index:2;
+  font-family:-apple-system,"PingFang SC",sans-serif;background:var(--card);padding:0 6px;}
+.ppc-write-lbl{color:#fbbf24;}
+.ppc-pull-lbl{color:var(--green);}
+.ppc-cache{position:absolute;background:rgba(16,185,129,.06);
+  border:1.5px solid var(--green);border-radius:14px;z-index:2;padding:14px 20px 18px;
+  box-shadow:0 0 0 1px rgba(16,185,129,.35),0 0 18px rgba(16,185,129,.28);
+  display:flex;flex-direction:column;align-items:center;}
+.ppc-cache-lbl{color:var(--green);font-weight:800;font-size:18px;letter-spacing:.5px;
+  font-family:-apple-system,"PingFang SC",sans-serif;line-height:1;}
+.ppc-cache-sub{margin-top:8px;color:#9bbaad;font-size:13px;
+  font-family:-apple-system,"PingFang SC",sans-serif;}
+.ppc-cache-row{margin-top:18px;display:flex;gap:70px;align-items:flex-end;}
+.ppc-kvmtx{display:flex;flex-direction:column;align-items:center;gap:8px;}
+.ppc-kvmtx .mtx-lbl{font-size:14px;font-weight:800;font-family:"JetBrains Mono",Menlo,monospace;}
+.ppc-kvmtx .k-lbl{color:var(--k);}
+.ppc-kvmtx .v-lbl{color:var(--v);}
+.ppc-kvmtx .mtx-dim{font-size:12px;color:#9a9a9a;font-family:"JetBrains Mono",Menlo,monospace;}
+.ppc-kvmtx .grid{display:grid;gap:3px;}
+
+/* ============ view 7 : KV Cache vs Prompt Cache comparison ============ */
+.vs-grid{display:grid;grid-template-columns:160px 1fr 1fr;gap:0;
+  border-radius:14px;overflow:hidden;background:#0a0a0a;}
+.vs-grid > div{padding:22px 24px;border-bottom:1px solid rgba(255,255,255,.06);}
+.vs-grid > div:nth-last-of-type(-n+3){border-bottom:none;}
+
+.vs-h-dim{background:#0a0a0a;color:#666;
+  font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+  display:flex;align-items:center;justify-content:center;text-align:center;}
+.vs-h-k{background:linear-gradient(180deg,#1f4a6e 0%,#163a55 100%);
+  color:#fff;font-weight:800;font-size:18px;
+  display:flex;align-items:center;justify-content:center;letter-spacing:.5px;
+  border-bottom:3px solid #38bdf8;text-align:center;}
+.vs-h-g{background:linear-gradient(180deg,#8a5524 0%,#6e4318 100%);
+  color:#fff;font-weight:800;font-size:18px;
+  display:flex;align-items:center;justify-content:center;letter-spacing:.5px;
+  border-bottom:3px solid #ff8a3d;text-align:center;}
+
+.vs-dim{background:#141414;color:#fff;font-weight:700;font-size:14px;
+  display:flex;align-items:center;justify-content:center;
+  text-align:center;line-height:1.4;letter-spacing:.3px;}
+
+.vs-cell-k{background:#0f1e2a;color:#f0f5f8;font-size:15px;line-height:1.75;}
+.vs-cell-g{background:#2a1d11;color:#fbf2e8;font-size:15px;line-height:1.75;}
+
+.vs-cell-k b{color:#7dd3fc;font-weight:700;}
+.vs-cell-g b{color:#ffc89e;font-weight:700;}
+
+.vs-cell-k .mono,.vs-cell-g .mono{
+  font-family:"JetBrains Mono","SF Mono",Menlo,monospace;
+  font-weight:700;padding:3px 10px;border-radius:5px;font-size:14px;
+  display:inline-block;margin:0 2px;}
+.vs-cell-k .mono{background:#1e3f5a;color:#bae6fd;}
+.vs-cell-g .mono{background:#6e4318;color:#ffd2ad;}
+.vs-cell-k sup,.vs-cell-g sup{font-size:.72em;}
+
+.vs-foot{margin-top:24px;background:#1a1a1a;border:1px solid #2a2a2a;
+  border-radius:12px;padding:22px 28px;font-size:16px;color:#fff;line-height:1.75;}
+.vs-foot .hl-k{color:#7dd3fc;font-weight:800;}
+.vs-foot .hl-g{color:#ffc89e;font-weight:800;}
+.vs-foot b{color:#fff;font-weight:700;}
+
+/* ============ view 6 : engineering (legacy, unused) ============ */
+.eng-card{margin-bottom:18px;}
+.tier{display:flex;align-items:center;gap:16px;margin:0 auto 10px;
+  border-radius:8px;height:54px;padding:0 20px;color:#fff;font-weight:600;}
+.tier .tname{font-size:16px;}
+.tier .tdesc{font-size:14px;font-weight:400;opacity:.9;margin-left:auto;}
+.tier.t1{width:46%;background:rgba(255,138,61,.9);}
+.tier.t2{width:70%;background:rgba(217,119,6,.85);}
+.tier.t3{width:100%;background:rgba(59,130,246,.8);}
+.hash-chain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.hblock{background:#202020;border:1px solid var(--k);border-radius:8px;
+  padding:12px 14px;display:flex;flex-direction:column;align-items:center;gap:6px;}
+.hblock .htok{font-size:14px;color:#ddd;}
+.hblock .hhash{font-size:13px;color:var(--k);font-family:"JetBrains Mono",Menlo,monospace;
+  background:rgba(56,189,248,.12);padding:3px 8px;border-radius:5px;}
+.hash-arrow{color:#666;font-size:18px;}
+.hash-note{font-size:14px;color:var(--dim);margin-top:12px;}
+.route-wrap{display:flex;align-items:center;gap:24px;}
+.route-reqs{display:flex;flex-direction:column;gap:12px;}
+.route-req{background:#202020;border-radius:8px;padding:10px 14px;
+  font-size:14px;color:#ddd;display:flex;gap:8px;align-items:center;}
+.prefix-dot{width:14px;height:14px;border-radius:3px;background:var(--green);}
+.route-lines{font-size:24px;color:var(--green);}
+.machine{background:rgba(16,185,129,.1);border:1.5px solid var(--green);
+  border-radius:10px;padding:18px 22px;font-size:15px;color:#fff;text-align:center;}
+.machine .mtitle{font-weight:700;margin-bottom:6px;font-size:16px;}
+.machine .mcache{font-size:14px;color:var(--green);}
+.machine.cold{border-color:#444;background:#1c1c1c;}
+.machine.cold .mcache{color:#777;}
+.eng-foot{background:rgba(255,138,61,.08);border:1px solid #3a3028;
+  border-radius:10px;padding:16px 22px;font-size:15px;color:#ddd;
+  line-height:1.55;}
+.eng-foot b{color:var(--v);}
+</style>
+</head>
+<body>
+<h1>Prompt Cache 里存的 value 到底是什么</h1>
+
+<div class="tabs">
+  <button class="tab-btn active" data-v="1">① 推理两段</button>
+  <button class="tab-btn" data-v="2">② Attention</button>
+  <button class="tab-btn" data-v="3">③ 矩阵计算</button>
+  <button class="tab-btn" data-v="4">④ KV Cache</button>
+  <button class="tab-btn" data-v="5">⑤ 初始化与追加</button>
+  <button class="tab-btn" data-v="6">⑥ 跨请求复用</button>
+  <button class="tab-btn" data-v="7">⑦ 全景对比</button>
+</div>
+
+<!-- ===================== VIEW 1 ===================== -->
+<div class="view active" data-view="1">
+  <div class="view-title" style="margin-bottom:18px;">Transformer 推理：Prefill 与 Decode，前后相连的两个阶段</div>
+
+  <div class="card">
+    <div class="flow1">
+      <svg class="flines" viewBox="0 0 1120 300">
+        <defs>
+          <marker id="mk-b" markerWidth="11" markerHeight="11" refX="5.5" refY="5.5"
+            orient="auto"><path d="M1,1 L10,5.5 L1,10 Z" fill="#38bdf8"/></marker>
+          <marker id="mk-o" markerWidth="11" markerHeight="11" refX="5.5" refY="5.5"
+            orient="auto"><path d="M1,1 L10,5.5 L1,10 Z" fill="#ff8a3d"/></marker>
+        </defs>
+        <!-- 连续时间线 rail -->
+        <path d="M60,46 L1085,46" stroke="#3a3a3a" stroke-width="2"
+          stroke-dasharray="7 6" fill="none"/>
+        <!-- prompt token → prefill box（蓝） -->
+        <line x1="108" y1="200" x2="108" y2="178" stroke="#38bdf8" stroke-width="2" marker-end="url(#mk-b)"/>
+        <line x1="190" y1="200" x2="190" y2="178" stroke="#38bdf8" stroke-width="2" marker-end="url(#mk-b)"/>
+        <line x1="272" y1="200" x2="272" y2="178" stroke="#38bdf8" stroke-width="2" marker-end="url(#mk-b)"/>
+        <line x1="354" y1="200" x2="354" y2="178" stroke="#38bdf8" stroke-width="2" marker-end="url(#mk-b)"/>
+        <line x1="436" y1="200" x2="436" y2="178" stroke="#38bdf8" stroke-width="2" marker-end="url(#mk-b)"/>
+        <!-- 已生成的字 → 它自己的 decode box（橙） -->
+        <line x1="638" y1="200" x2="638" y2="178" stroke="#ff8a3d" stroke-width="2" marker-end="url(#mk-o)"/>
+        <line x1="813" y1="200" x2="813" y2="178" stroke="#ff8a3d" stroke-width="2" marker-end="url(#mk-o)"/>
+        <line x1="988" y1="200" x2="988" y2="178" stroke="#ff8a3d" stroke-width="2" marker-end="url(#mk-o)"/>
+        <!-- A：Prefill 算完，写出第一个字「写」（蓝） -->
+        <path d="M460,110 L460,52 Q460,46 466,46 L549,46 Q555,46 555,52 L555,217 Q555,223 561,223 L597,223"
+          fill="none" stroke="#38bdf8" stroke-width="2.5" marker-end="url(#mk-b)"/>
+        <!-- B/C/D：每个 decode 前向写出下一个字（橙） -->
+        <path d="M680,110 L680,52 Q680,46 686,46 L719,46 Q725,46 725,52 L725,217 Q725,223 731,223 L772,223"
+          fill="none" stroke="#ff8a3d" stroke-width="2.5" marker-end="url(#mk-o)"/>
+        <path d="M855,110 L855,52 Q855,46 861,46 L894,46 Q900,46 900,52 L900,217 Q900,223 906,223 L947,223"
+          fill="none" stroke="#ff8a3d" stroke-width="2.5" marker-end="url(#mk-o)"/>
+        <path d="M1030,110 L1030,52 Q1030,46 1036,46 L1069,46 Q1075,46 1075,52 L1075,194"
+          fill="none" stroke="#ff8a3d" stroke-width="2.5" marker-end="url(#mk-o)"/>
+        <!-- 底部分段括号 -->
+        <path d="M70,254 L70,261 L474,261 L474,254" fill="none" stroke="#3f6d99" stroke-width="2"/>
+        <path d="M600,254 L600,261 L1026,261 L1026,254" fill="none" stroke="#c75a1f" stroke-width="2"/>
+      </svg>
+
+      <div class="frail-label" style="left:560px;width:520px;top:14px;">Autoregressive · 自回归 · 每生成一个字，都接回输入再生成下一个</div>
+
+      <div class="fcanopy pre" style="left:188px;width:170px;top:56px;">
+        <div class="ctitle">Prefill 预填充</div>
+        <div class="csub">整段跑一次前向</div>
+      </div>
+      <div class="fcanopy dec" style="left:738px;width:150px;top:56px;">
+        <div class="ctitle">Decode 解码</div>
+        <div class="csub">一次写一个字</div>
+      </div>
+
+      <div class="fbox pre" style="left:58px;top:110px;width:430px;height:64px;">Transformer</div>
+      <div class="fbox dec" style="left:578px;top:110px;width:120px;height:64px;">Transformer</div>
+      <div class="fbox dec" style="left:753px;top:110px;width:120px;height:64px;">Transformer</div>
+      <div class="fbox dec" style="left:928px;top:110px;width:120px;height:64px;">Transformer</div>
+
+      <div class="fchip pp" style="left:70px;top:200px;">喜欢</div>
+      <div class="fchip pp" style="left:152px;top:200px;">唱</div>
+      <div class="fchip pp" style="left:234px;top:200px;">跳</div>
+      <div class="fchip pp" style="left:316px;top:200px;">Rap</div>
+      <div class="fchip pp" style="left:398px;top:200px;">还有</div>
+      <div class="fchip gg" style="left:600px;top:200px;">篮球</div>
+      <div class="fchip gg" style="left:775px;top:200px;">music</div>
+      <div class="fchip gg" style="left:950px;top:200px;">起</div>
+      <div class="fellip" style="left:1063px;top:200px;">…</div>
+
+      <div class="fblabel pp" style="left:70px;width:404px;top:266px;">你发来的提示词</div>
+      <div class="fblabel gg" style="left:600px;width:426px;top:266px;">模型逐字生成的回答</div>
+    </div>
+  </div>
+
+  <div class="banner" style="margin-top:18px;">每个新字都基于<b>前面全部内容</b>（你的提示词＋已经生成的字）；提示词缓存优化的，主要是 <b>Prefill</b> 阶段</div>
+</div>
+
+<!-- ===================== VIEW 2 ===================== -->
+<div class="view" data-view="2">
+  <div class="view-title">生成下一个token时，前面的词并非同等重要 —— Attention 注意力机制算出此刻谁最相关</div>
+  <div class="card">
+    <div class="attn-demo">
+      <div class="attn-demo-cap">举个例子：模型正在预测「？」位置的下一个token —— <b>看注意力回头落在哪些词上</b></div>
+      <div class="attn-demo-row">
+        <div class="attn-row-area">
+          <svg class="attn-arcs" viewBox="0 0 549 76" preserveAspectRatio="none">
+            <defs>
+              <marker id="atn-arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+                <path d="M0,0 L9,4.5 L0,9 Z" fill="#ff8a3d"/>
+              </marker>
+            </defs>
+            <path d="M507,74 C507,4 42,4 42,68" fill="none" stroke="#ff8a3d"
+              stroke-width="1.5" opacity="0.3" marker-end="url(#atn-arr)"/>
+            <path d="M507,74 C507,4 135,4 135,68" fill="none" stroke="#ff8a3d"
+              stroke-width="3.6" opacity="0.85" marker-end="url(#atn-arr)"/>
+            <path d="M507,74 C507,4 228,4 228,68" fill="none" stroke="#ff8a3d"
+              stroke-width="4.0" opacity="0.92" marker-end="url(#atn-arr)"/>
+            <path d="M507,74 C507,4 321,4 321,68" fill="none" stroke="#ff8a3d"
+              stroke-width="3.7" opacity="0.88" marker-end="url(#atn-arr)"/>
+            <path d="M507,74 C507,4 414,4 414,68" fill="none" stroke="#ff8a3d"
+              stroke-width="1.5" opacity="0.3" marker-end="url(#atn-arr)"/>
+          </svg>
+          <div class="attn-tokens">
+            <div class="attn-chip">喜欢</div>
+            <div class="attn-chip">唱</div>
+            <div class="attn-chip">跳</div>
+            <div class="attn-chip">Rap</div>
+            <div class="attn-chip">还有</div>
+            <div class="attn-chip predict">？</div>
+          </div>
+        </div>
+        <div class="attn-arrow-pred">→</div>
+        <div class="attn-result">篮球</div>
+      </div>
+    </div>
+    <div class="sec-name">计算过程：每个词投影成 Q、K、V，代入 Attention 公式</div>
+    <div class="qkv-row-pair">
+      <div class="qkv-projection">
+        <div class="qkv-source">
+          <div class="qkv-tok">词</div>
+          <div class="qkv-tok-sub">每个 token</div>
+        </div>
+        <svg class="qkv-arrows" viewBox="0 0 130 220" preserveAspectRatio="none">
+          <defs>
+            <marker id="qa-q" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto">
+              <path d="M0,0 L9,5 L0,10 Z" fill="#a78bfa"/>
+            </marker>
+            <marker id="qa-k" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto">
+              <path d="M0,0 L9,5 L0,10 Z" fill="#38bdf8"/>
+            </marker>
+            <marker id="qa-v" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto">
+              <path d="M0,0 L9,5 L0,10 Z" fill="#ff8a3d"/>
+            </marker>
+          </defs>
+          <path d="M0,110 C 45,110 80,32 120,32" fill="none"
+            stroke="#a78bfa" stroke-width="2.5" marker-end="url(#qa-q)"/>
+          <path d="M0,110 L 120,110" fill="none"
+            stroke="#38bdf8" stroke-width="2.5" marker-end="url(#qa-k)"/>
+          <path d="M0,110 C 45,110 80,188 120,188" fill="none"
+            stroke="#ff8a3d" stroke-width="2.5" marker-end="url(#qa-v)"/>
+        </svg>
+        <div class="qkv-targets">
+          <div class="qkv-target box-q">
+            <div class="qkv-vec q-vec"><span></span><span></span><span></span><span></span><span></span></div>
+            <div class="qkv-lbl"><div class="big">Query</div><div class="cn">查询 · 我想找什么</div></div>
+          </div>
+          <div class="qkv-target box-k">
+            <div class="qkv-vec k-vec"><span></span><span></span><span></span><span></span><span></span></div>
+            <div class="qkv-lbl"><div class="big">Key</div><div class="cn">标签 · 我能提供什么</div></div>
+          </div>
+          <div class="qkv-target box-v">
+            <div class="qkv-vec v-vec"><span></span><span></span><span></span><span></span><span></span></div>
+            <div class="qkv-lbl"><div class="big">Value</div><div class="cn">内容 · 我携带的信息</div></div>
+          </div>
+        </div>
+      </div>
+      <svg class="qkv-bridge" viewBox="0 0 70 220" preserveAspectRatio="none">
+        <defs>
+          <marker id="bg-q" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto">
+            <path d="M0,0 L9,5 L0,10 Z" fill="#a78bfa"/>
+          </marker>
+          <marker id="bg-k" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto">
+            <path d="M0,0 L9,5 L0,10 Z" fill="#38bdf8"/>
+          </marker>
+          <marker id="bg-v" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto">
+            <path d="M0,0 L9,5 L0,10 Z" fill="#ff8a3d"/>
+          </marker>
+        </defs>
+        <path d="M0,32 L 62,32" fill="none"
+          stroke="#a78bfa" stroke-width="2.5" marker-end="url(#bg-q)"/>
+        <path d="M0,110 L 62,110" fill="none"
+          stroke="#38bdf8" stroke-width="2.5" marker-end="url(#bg-k)"/>
+        <path d="M0,188 L 62,188" fill="none"
+          stroke="#ff8a3d" stroke-width="2.5" marker-end="url(#bg-v)"/>
+      </svg>
+      <div class="formula">
+        \[\text{softmax}\!\left(\frac{\textcolor{#a78bfa}{Q}\textcolor{#38bdf8}{K^{\top}}}{\sqrt{d_k}}\right)\textcolor{#ff8a3d}{V}\]
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== VIEW 3 ===================== -->
+<div class="view" data-view="3">
+  <div class="view-title">假设提示词有 n 个 token、每个 token 向量 d 维 —— Q、K、V 各是一个 n×d 矩阵</div>
+  <div class="card" style="margin-bottom:20px;">
+    <div class="sec-name">Prefill：整段提示词进行全量计算 —— Q 满 n 行、Kᵀ 满 n 列、V 满 n 行</div>
+    <div class="formula-recap">
+      \[\text{Attention}(\textcolor{#a78bfa}{Q},\textcolor{#38bdf8}{K},\textcolor{#ff8a3d}{V})=\text{softmax}\!\left(\frac{\textcolor{#a78bfa}{Q}\textcolor{#38bdf8}{K^{\top}}}{\sqrt{d_k}}\right)\textcolor{#ff8a3d}{V}\]
+    </div>
+    <div class="mtx-flow">
+      <div class="mtx"><span class="ml-sym q">Q</span>
+        <div class="grid" id="g-q"></div><span class="ml-dim">n × d</span></div>
+      <div class="op">×</div>
+      <div class="mtx"><span class="ml-sym k">K<sup>⊤</sup></span>
+        <div class="grid" id="g-kt"></div><span class="ml-dim">d × n</span></div>
+      <div class="op">=</div>
+      <div class="mtx"><span class="ml-sym s">softmax(QK<sup>⊤</sup>/√d)</span>
+        <div class="grid" id="g-score"></div><span class="ml-dim">n × n</span></div>
+      <div class="op">×</div>
+      <div class="mtx"><span class="ml-sym v">V</span>
+        <div class="grid" id="g-v"></div><span class="ml-dim">n × d</span></div>
+      <div class="op">=</div>
+      <div class="mtx"><span class="ml-sym o">Output</span>
+        <div class="grid" id="g-out"></div><span class="ml-dim">n × d</span></div>
+    </div>
+    <div class="note-line">n 越大，中间那张 n×n 权重表涨得越猛 —— Prefill 计算量主要烧在这一步，吃的是 GPU 算力</div>
+  </div>
+  <div class="card">
+    <div class="sec-name">Decode：每生成一个新字 —— Q 只 1 行、Kᵀ 末列加 1、V 末行加 1</div>
+    <div class="mtx-flow">
+      <div class="mtx"><span class="ml-sym q">Q</span>
+        <div class="grid" id="g-qd"></div><span class="ml-dim">1 × d</span></div>
+      <div class="op">×</div>
+      <div class="mtx"><span class="ml-sym k">K<sup>⊤</sup></span>
+        <div class="grid" id="g-kd"></div><span class="ml-dim">d × (n+1)</span></div>
+      <div class="op">=</div>
+      <div class="mtx"><span class="ml-sym s">softmax(QK<sup>⊤</sup>/√d)</span>
+        <div class="grid" id="g-scored"></div><span class="ml-dim">1 × (n+1)</span></div>
+      <div class="op">×</div>
+      <div class="mtx"><span class="ml-sym v">V</span>
+        <div class="grid" id="g-vd"></div><span class="ml-dim">(n+1) × d</span></div>
+      <div class="op">=</div>
+      <div class="mtx"><span class="ml-sym o">Output</span>
+        <div class="grid" id="g-outd"></div><span class="ml-dim">1 × d</span></div>
+    </div>
+    <div class="decode-note">每生成一个字，<b>K、V 各多存一份这个新字的向量</b>；前面那些已经算过的，每一步都要被重新用一遍 —— 这就是 KV Cache 要解的问题。</div>
+  </div>
+</div>
+
+<!-- ===================== VIEW 5 (KV Cache 怎么填：dataflow) ===================== -->
+<div class="view" data-view="5">
+  <div class="view-title">加入 KV Cache 后：Prefill 一次性写入，Decode 边读边追加</div>
+  <div class="card">
+    <div class="kvf">
+      <svg class="kvf-svg" viewBox="0 0 1180 730">
+        <defs>
+          <marker id="ar-gr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M0,0 L8,4.5 L0,9 Z" fill="#aaa"/>
+          </marker>
+          <marker id="ar-yel" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+            <path d="M0,0 L9,5 L0,10 Z" fill="#fbbf24"/>
+          </marker>
+        </defs>
+
+        <!-- ===== PREFILL × → wQ/wK/wV (Manhattan), centers y=70/180/290 ===== -->
+        <path d="M134,180 L134,70 L165,70" fill="none" stroke="#aaa" stroke-width="1.5" marker-end="url(#ar-gr)"/>
+        <path d="M134,180 L165,180" fill="none" stroke="#aaa" stroke-width="1.5" marker-end="url(#ar-gr)"/>
+        <path d="M134,180 L134,290 L165,290" fill="none" stroke="#aaa" stroke-width="1.5" marker-end="url(#ar-gr)"/>
+
+        <!-- Q → prefill attn (attn at left=800, top=140, w=230, center y=180) -->
+        <path d="M319.5,70 L780,70 L780,150 L800,150" fill="none" stroke="#aaa" stroke-width="1.5" marker-end="url(#ar-gr)"/>
+        <!-- prefill attn right (1030) → output (1040) -->
+        <path d="M1030,180 L1040,180" fill="none" stroke="#aaa" stroke-width="1.5" marker-end="url(#ar-gr)"/>
+
+        <!-- ===== Prefill K, V → cache (yellow write, enter from LEFT side) ===== -->
+        <!-- K (319.5,180) → cache top-left corner (400,225) : H right then V down -->
+        <path d="M319.5,180 L400,180 L400,225" fill="none" stroke="#fbbf24" stroke-width="2.5" marker-end="url(#ar-yel)"/>
+        <!-- V (319.5,290) → cache left side (400,290) : straight H right -->
+        <path d="M319.5,290 L400,290" fill="none" stroke="#fbbf24" stroke-width="2.5" marker-end="url(#ar-yel)"/>
+
+        <!-- ===== DECODE × → d-wq/d-wk/d-wv (Manhattan), centers y=480/580/680 ===== -->
+        <path d="M134,580 L134,480 L165,480" fill="none" stroke="#aaa" stroke-width="1.5" marker-end="url(#ar-gr)"/>
+        <path d="M134,580 L165,580" fill="none" stroke="#aaa" stroke-width="1.5" marker-end="url(#ar-gr)"/>
+        <path d="M134,580 L134,680 L165,680" fill="none" stroke="#aaa" stroke-width="1.5" marker-end="url(#ar-gr)"/>
+
+        <!-- q → decode attn (attn at left=800, top=540, w=230, center y=580) -->
+        <path d="M319.5,480 L780,480 L780,550 L800,550" fill="none" stroke="#aaa" stroke-width="1.5" marker-end="url(#ar-gr)"/>
+        <!-- decode attn right (1030) → output (1040) -->
+        <path d="M1030,580 L1040,580" fill="none" stroke="#aaa" stroke-width="1.5" marker-end="url(#ar-gr)"/>
+
+        <!-- ===== Decode k_new, v_new → cache (yellow append, stop at cache box bot y=385) ===== -->
+        <path d="M319.5,580 L535,580 L535,385" fill="none" stroke="#fbbf24" stroke-width="2.5" marker-end="url(#ar-yel)"/>
+        <path d="M319.5,680 L585.5,680 L585.5,385" fill="none" stroke="#fbbf24" stroke-width="2.5" marker-end="url(#ar-yel)"/>
+
+        <!-- ===== Cache → both attns (gray trunk, branching up/down) ===== -->
+        <path d="M700,305 L750,305 L750,180 L800,180" fill="none" stroke="#aaa" stroke-width="1.5" marker-end="url(#ar-gr)"/>
+        <path d="M700,305 L750,305 L750,580 L800,580" fill="none" stroke="#aaa" stroke-width="1.5" marker-end="url(#ar-gr)"/>
+      </svg>
+
+      <!-- ===== PREFILL ===== -->
+      <div class="kvf-sec" style="left:14px;top:8px;font-size:16px;">Prefill 阶段</div>
+
+      <div class="kvf-mtx m-input" style="left:50px;top:116px;"><span class="glabel">prompt</span><div class="grid" id="m5-prompt"></div></div>
+      <div class="kvf-op" style="left:120px;top:166px;width:28px;height:28px;font-size:24px;">×</div>
+
+      <div class="kvf-mtx m-wq" style="left:160px;top:20px;"><span class="glabel">wQ</span><div class="grid" id="m5-wq"></div></div>
+      <div class="kvf-mtx m-wk" style="left:160px;top:130px;"><span class="glabel">wK</span><div class="grid" id="m5-wk"></div></div>
+      <div class="kvf-mtx m-wv" style="left:160px;top:240px;"><span class="glabel">wV</span><div class="grid" id="m5-wv"></div></div>
+
+      <div class="kvf-op" style="left:232px;top:60px;width:24px;height:20px;font-size:19px;">=</div>
+      <div class="kvf-op" style="left:232px;top:170px;width:24px;height:20px;font-size:19px;">=</div>
+      <div class="kvf-op" style="left:232px;top:280px;width:24px;height:20px;font-size:19px;">=</div>
+
+      <div class="kvf-mtx m-rq" style="left:260px;top:24px;"><div class="grid" id="m5-Q"></div></div>
+      <div class="kvf-mtx m-rk" style="left:260px;top:134px;"><div class="grid" id="m5-K"></div></div>
+      <div class="kvf-mtx m-rv" style="left:260px;top:244px;"><div class="grid" id="m5-V"></div></div>
+
+      <div class="kvf-node kvf-attn" style="left:800px;top:140px;width:230px;height:80px;">
+        \(\text{softmax}\!\left(\frac{\textcolor{#a78bfa}{Q}\textcolor{#38bdf8}{K^{\top}}}{\sqrt{d_k}}\right)\textcolor{#ff8a3d}{V}\)
+      </div>
+      <div class="kvf-lbl" style="left:1040px;top:173px;color:#cfcfcf;font-size:15px;">→ output</div>
+
+      <!-- ===== KV CACHE (middle, sandwiched in empty space between Prefill and Decode) ===== -->
+      <div class="kvf-cache" style="left:400px;top:225px;width:300px;height:160px;"></div>
+      <div class="kvc-label" style="left:495px;top:234px;font-size:17px;">KV Cache</div>
+      <div class="kvf-mtx m-Krow" style="left:440px;top:258px;z-index:3;"><span class="glabel">cached K (Kᵀ)</span><div class="grid" id="m5-Krow"></div></div>
+      <div class="kvf-mtx m-Vrow" style="left:580px;top:258px;z-index:3;"><span class="glabel">cached V</span><div class="grid" id="m5-Vrow"></div></div>
+
+      <!-- ===== DECODE LOOP BOX ===== -->
+      <div class="kvf-loop" style="left:14px;top:415px;width:1150px;height:305px;"></div>
+      <div class="kvf-loop-tag" style="right:30px;bottom:9px;">loop</div>
+
+      <div class="kvf-sec" style="left:14px;top:410px;font-size:16px;">Decode 阶段</div>
+
+      <div class="kvf-mtx m-input" style="left:50px;top:551px;"><span class="glabel">new</span><div class="grid" id="m5-newtok"></div></div>
+      <div class="kvf-op" style="left:120px;top:566px;width:28px;height:28px;font-size:24px;">×</div>
+
+      <div class="kvf-mtx m-wq" style="left:160px;top:430px;"><span class="glabel">wQ</span><div class="grid" id="m5-d-wq"></div></div>
+      <div class="kvf-mtx m-wk" style="left:160px;top:530px;"><span class="glabel">wK</span><div class="grid" id="m5-d-wk"></div></div>
+      <div class="kvf-mtx m-wv" style="left:160px;top:630px;"><span class="glabel">wV</span><div class="grid" id="m5-d-wv"></div></div>
+
+      <div class="kvf-op" style="left:232px;top:470px;width:24px;height:20px;font-size:19px;">=</div>
+      <div class="kvf-op" style="left:232px;top:570px;width:24px;height:20px;font-size:19px;">=</div>
+      <div class="kvf-op" style="left:232px;top:670px;width:24px;height:20px;font-size:19px;">=</div>
+
+      <div class="kvf-mtx m-rq" style="left:260px;top:451px;"><span class="glabel">q</span><div class="grid" id="m5-d-q"></div></div>
+      <div class="kvf-mtx m-rk" style="left:260px;top:551px;"><span class="glabel">k_new</span><div class="grid" id="m5-d-k"></div></div>
+      <div class="kvf-mtx m-rv" style="left:260px;top:651px;"><span class="glabel">v_new</span><div class="grid" id="m5-d-v"></div></div>
+
+      <div class="kvf-node kvf-attn" style="left:800px;top:540px;width:230px;height:80px;">
+        \(\text{softmax}\!\left(\frac{\textcolor{#a78bfa}{q}\textcolor{#38bdf8}{K^{\top}}}{\sqrt{d_k}}\right)\textcolor{#ff8a3d}{V}\)
+      </div>
+      <div class="kvf-lbl" style="left:1040px;top:573px;color:#cfcfcf;font-size:15px;">→ output</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== VIEW 4 (KV Cache 内容) ===================== -->
+<div class="view" data-view="4">
+  <div class="view-title">KV Cache 到底存了什么</div>
+  <div class="card" style="margin-bottom:20px;">
+    <div class="mtx-flow" style="grid-template-columns:auto auto;justify-content:center;gap:6px 56px;align-items:center;margin-bottom:24px;">
+      <div class="kv-col">
+        <div class="kv-discard-group">
+          <div class="mtx kv-discard">
+            <span class="ml-sym q">Q</span>
+            <div class="grid" id="g-q4"></div>
+          </div>
+          <div class="kv-x-badge">✗</div>
+        </div>
+        <div class="kv-reason discard">只在生成它的那一刻用一次</div>
+      </div>
+      <div class="kv-col">
+        <div class="kv-keep-frame">
+          <div class="mtx"><span class="ml-sym k">K<sup>⊤</sup></span>
+            <div class="grid" id="g-k4"></div></div>
+          <div class="mtx"><span class="ml-sym v">V</span>
+            <div class="grid" id="g-v4"></div></div>
+        </div>
+        <div class="kv-reason keep">之后每生成一个新字都要翻出来再用</div>
+      </div>
+    </div>
+    <div class="cache-box">把这批不变的 K 和 V 存下来，就是 <b>KV Cache</b></div>
+    <div class="speedup-line">
+      <span class="cmpx-tag">单步复杂度</span>
+      <span class="cmpx-no">O(N<sup>2</sup>)</span>
+      <span class="cmpx-arr">⟶</span>
+      <span class="cmpx-yes">O(N)</span>
+      <span class="cmpx-mult">每步快 N 倍</span>
+    </div>
+    <div class="cmpx-legend">N = 当前上下文长度（提示词 + 已生成）</div>
+  </div>
+</div>
+
+<!-- ===================== VIEW 6 (was 5) ===================== -->
+<div class="view" data-view="6">
+  <div class="view-title">prompt cache：前缀和上次一样，直接搬出存好的 K/V</div>
+  <div class="view-sub">两次请求共享前缀；第二次请求跳过这段 Prefill 计算</div>
+  <div class="card">
+    <div class="ppc">
+      <svg class="ppc-svg" viewBox="0 0 1180 580">
+        <defs>
+          <marker id="ppc-yel" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+            <path d="M0,0 L9,5 L0,10 Z" fill="#fbbf24"/>
+          </marker>
+          <marker id="ppc-grn" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+            <path d="M0,0 L9,5 L0,10 Z" fill="#10b981"/>
+          </marker>
+        </defs>
+        <!-- Request 1 (whole prefix) → KV Cache (write, yellow) -->
+        <path d="M590,110 L590,160" fill="none" stroke="#fbbf24" stroke-width="2.5" marker-end="url(#ppc-yel)"/>
+        <!-- KV Cache → Request 2 cached tokens (pull, green, Manhattan) -->
+        <path d="M590,410 L590,460 L200,460 L200,490" fill="none" stroke="#10b981" stroke-width="2.5" marker-end="url(#ppc-grn)"/>
+      </svg>
+
+      <!-- Request 1 -->
+      <div class="ppc-sec" style="top:14px;left:20px;color:#7fb5e6;">请求 1 · 冷启动 · Prefill 全量计算所有 token 的 K/V</div>
+      <div class="ppc-tokens" style="top:56px;left:20px;">
+        <span class="pt pt-sys">你</span>
+        <span class="pt pt-sys">是</span>
+        <span class="pt pt-sys">偶像</span>
+        <span class="pt pt-sys">练习生</span>
+        <span class="pt pt-sys">蔡徐坤<span class="ppc-bp"><span class="lbl">cache_control</span></span></span>
+        <span class="pt pt-q1">请</span>
+        <span class="pt pt-q1">唱</span>
+        <span class="pt pt-q1">一段</span>
+        <span class="pt pt-q1">rap</span>
+      </div>
+      <div class="ppc-write-lbl" style="top:118px;left:602px;">写入 KV Cache</div>
+
+      <!-- KV Cache box -->
+      <div class="ppc-cache" style="left:340px;top:160px;width:500px;height:250px;">
+        <div class="ppc-cache-lbl">KV Cache · 按前缀哈希存储</div>
+        <div class="ppc-cache-sub">缓存命中查找的就是这一份（5 个前缀 token 的 K / V 张量）</div>
+        <div class="ppc-cache-row">
+          <div class="ppc-kvmtx">
+            <div class="mtx-lbl k-lbl">cached K (Kᵀ)</div>
+            <div class="grid" id="ppc-K"></div>
+            <div class="mtx-dim">d × 5</div>
+          </div>
+          <div class="ppc-kvmtx">
+            <div class="mtx-lbl v-lbl">cached V</div>
+            <div class="grid" id="ppc-V"></div>
+            <div class="mtx-dim">5 × d</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Request 2 -->
+      <div class="ppc-sec" style="top:425px;left:20px;color:var(--green);">请求 2 · 前缀命中 · 直接搬出 K/V</div>
+      <div class="ppc-pull-lbl" style="top:450px;left:360px;">搬出缓存 · 跳过 Prefill</div>
+      <div class="ppc-tokens" style="top:490px;left:20px;">
+        <span class="pt pt-cached">你</span>
+        <span class="pt pt-cached">是</span>
+        <span class="pt pt-cached">偶像</span>
+        <span class="pt pt-cached">练习生</span>
+        <span class="pt pt-cached">蔡徐坤<span class="ppc-bp"><span class="lbl">cache_control</span></span></span>
+        <span class="pt pt-q2">请</span>
+        <span class="pt pt-q2">打</span>
+        <span class="pt pt-q2">一场</span>
+        <span class="pt pt-q2">篮球</span>
+      </div>
+    </div>
+    <div class="bar5-note" style="margin-top:24px;">
+      命中缓存 <b>≠</b> 直接给你一个答案。省掉的是 Prefill 那段 attention 计算，模型该生成还得生成 —— 这就是命中的 token 便宜得多的原因。
+    </div>
+  </div>
+</div>
+
+<!-- ===================== VIEW 7 (KV Cache vs Prompt Cache 全景对比) ===================== -->
+<div class="view" data-view="7">
+  <div style="width:900px;margin:0 auto;">
+  <div class="view-title">KV Cache vs Prompt Cache · 核心对比</div>
+  <div class="card">
+    <div class="vs-grid">
+      <div class="vs-h-dim">关键维度</div>
+      <div class="vs-h-k">KV Cache · 键值缓存</div>
+      <div class="vs-h-g">Prompt Cache · 提示词缓存</div>
+
+      <div class="vs-dim">本质定义</div>
+      <div class="vs-cell-k">存储<b>当前对话中已生成 token</b>的 <b>K</b> 和 <b>V</b> 矩阵的显存技术</div>
+      <div class="vs-cell-g">存储多轮对话间<b>完全相同 / 高频复用的前置文本</b>(如 system prompt) 的 KV 缓存技术</div>
+
+      <div class="vs-dim">核心目的</div>
+      <div class="vs-cell-k">消除 <b>Decode 阶段</b>的重复投影计算</div>
+      <div class="vs-cell-g">消除 <b>Prefill 阶段</b>静态长文本的重复大表计算</div>
+
+      <div class="vs-dim">复杂度优化</div>
+      <div class="vs-cell-k">Decode 单步复杂度从 <span class="mono">O(N<sup>2</sup>)</span> 降到 <span class="mono">O(N)</span> · 平方级 → 线性级</div>
+      <div class="vs-cell-g">命中部分 Prefill 计算量从 <span class="mono">O(N<sup>2</sup>)</span> 抹平到 <span class="mono">O(1)</span> · 直接跳过</div>
+
+      <div class="vs-dim">生命周期</div>
+      <div class="vs-cell-k"><b>动态局部变量</b>: 单次对话内实时追加 (Append), 对话结束即销毁</div>
+      <div class="vs-cell-g"><b>静态半持久变量</b>: 跨请求 / 多用户长期锁在显存, 命中即复用, 按 LRU 策略过期</div>
+    </div>
+    <div class="vs-foot">
+      一句话: <span class="hl-k">KV Cache</span> 省的是<b>同一次对话内 decode 的重复算</b>; <span class="hl-g">Prompt Cache</span> 省的是<b>跨请求 prefill 的重复算</b>。
+    </div>
+  </div>
+  </div>
+</div>
+
+<script>
+// ---- tab switching ----
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const v=btn.dataset.v;
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b===btn));
+    document.querySelectorAll('.view').forEach(view=>{
+      view.classList.toggle('active',view.dataset.view===v);
+    });
+  });
+});
+
+// ---- matrix grids ----
+function grid(id,rows,cols,cls,opts){
+  opts=opts||{};
+  const el=document.getElementById(id);
+  if(!el)return;
+  el.style.gridTemplateColumns='repeat('+cols+',1fr)';
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const cell=document.createElement('div');
+      let k=cls;
+      if(opts.newRow!==undefined && r===opts.newRow) k=opts.newCls||cls;
+      if(opts.newCol!==undefined && c===opts.newCol) k=opts.newCls||cls;
+      cell.className='cell '+k;
+      el.appendChild(cell);
+    }
+  }
+}
+// prefill : n=6, d=4
+grid('g-q',6,4,'c-q');
+grid('g-kt',4,6,'c-k');
+grid('g-score',6,6,'c-score');
+grid('g-v',6,4,'c-v');
+grid('g-out',6,4,'c-out');
+// decode : 与 prefill 同列对齐，K=Kᵀ d×(n+1)，末列高亮；V (n+1)×d，末行高亮
+grid('g-qd',1,4,'c-q');
+grid('g-kd',4,7,'c-k',{newCol:6,newCls:'c-newk'});
+grid('g-scored',1,7,'c-score');
+grid('g-vd',7,4,'c-v',{newRow:6,newCls:'c-new'});
+grid('g-outd',1,4,'c-out');
+// view 5 dataflow — n=6, d=4, d_k=4 (与 Tab3 一致)
+// prompt: n×d ; wQ/wK/wV: d×d_k ; Q/K/V: n×d_k
+grid('m5-prompt',6,4,'c-k');
+grid('m5-wq',4,4,'c-q'); grid('m5-wk',4,4,'c-k'); grid('m5-wv',4,4,'c-v');
+grid('m5-Q',6,4,'c-q'); grid('m5-K',6,4,'c-k'); grid('m5-V',6,4,'c-v');
+// decode: new token 1×d ; weights d×d_k ; q/k/v 1×d_k
+grid('m5-newtok',1,4,'c-k');
+grid('m5-d-wq',4,4,'c-q'); grid('m5-d-wk',4,4,'c-k'); grid('m5-d-wv',4,4,'c-v');
+grid('m5-d-q',1,4,'c-q'); grid('m5-d-k',1,4,'c-k'); grid('m5-d-v',1,4,'c-v');
+// cached K shown as Kᵀ : d × (n+1) = 4 × 7 ，末列高亮 = k_new
+grid('m5-Krow',4,7,'c-k',{newCol:6,newCls:'c-newk'});
+// cached V shown as V : (n+1) × d = 7 × 4 ，末行高亮 = v_new
+grid('m5-Vrow',7,4,'c-v',{newRow:6,newCls:'c-new'});
+// view 4 (KV Cache 内容) : 沿用 decode 里 Q / Kᵀ / V 三个矩阵
+grid('g-q4',1,4,'c-q');
+grid('g-k4',4,7,'c-k',{newCol:6,newCls:'c-newk'});
+grid('g-v4',7,4,'c-v',{newRow:6,newCls:'c-new'});
+// view 6 (prompt cache cross-request) : cached K (d×5) 和 cached V (5×d)
+grid('ppc-K',4,5,'c-k');
+grid('ppc-V',5,4,'c-v');
+</script>
+</body>
+</html>
